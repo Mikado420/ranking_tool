@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Ranking Tool</title>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
+<style>
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:#eef2f7;
+  display:flex;
+  flex-direction:column;
+}
+
+header{
+  background:#1e3a8a;
+  color:white;
+  padding:14px 20px;
+  font-size:20px;
+  font-weight:bold;
+}
+
+.controls,.line-config,.bulk,.stats{
+  padding:10px;
+  background:white;
+  border-bottom:1px solid #ddd;
+}
+
+button{
+  padding:6px 12px;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+  background:#2563eb;
+  color:white;
+}
+
+input,textarea{
+  font-size:16px; /* iOS拡大防止 */
+}
+
+.score-input{
+  width:60px;
+  text-align:center;
+}
+
+.main{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+}
+
+/* 一覧を広くする */
+.middle{
+  flex:1 1 auto;
+  display:flex;
+  min-height:0;
+}
+
+.pool-pane,.ranking-pane{
+  flex:1;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  padding:12px;
+}
+
+.pool-pane{
+  border-right:1px solid #ddd;
+  background:#f9fafb;
+}
+
+.card{
+  background:white;
+  border:1px solid #ddd;
+  border-radius:8px;
+  padding:10px;
+  margin-bottom:8px;
+}
+
+.card.selected{
+  border:2px solid #2563eb;
+  background:#eff6ff;
+}
+
+.card-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.score{
+  font-weight:bold;
+  color:#0ea5e9;
+}
+
+.line-divider{
+  border-top:2px dashed #f97316;
+  margin:14px 0;
+  position:relative;
+}
+
+.line-label{
+  position:absolute;
+  left:50%;
+  transform:translateX(-50%);
+  top:-10px;
+  background:white;
+  padding:0 6px;
+  font-size:12px;
+  color:#ea580c;
+}
+
+/* メモは20% */
+.bottom-pane{
+  flex:0 0 20%;
+  min-height:120px;
+  border-top:1px solid #ddd;
+  background:white;
+  padding:12px;
+  display:flex;
+  flex-direction:column;
+}
+
+#memoText{
+  flex:1;
+  border:1px solid #ddd;
+  border-radius:6px;
+  padding:6px;
+}
+
+#memoText::placeholder{
+  color:#9ca3af;
+}
+
+#lineError{
+  color:#dc2626;
+  font-size:13px;
+  margin-top:4px;
+}
+</style>
+</head>
+<body>
+
+<header>Ranking Tool</header>
+
+<div class="controls">
+  上限 <input type="number" id="maxScore" class="score-input" value="85">
+  下限 <input type="number" id="minScore" class="score-input" value="65">
+  <button onclick="render()">再計算</button>
+  <button onclick="saveData()">保存</button>
+  <button onclick="loadData()">読込</button>
+  <button onclick="resetAll()">リセット</button>
+</div>
+
+<div class="stats" id="statsPanel">
+審査情報：曲数 0 ｜ 平均 0 ｜ 標準偏差 0
+</div>
+
+<div class="line-config">
+ライン追加：
+<input type="number" id="lineRank" class="score-input" placeholder="位">
+位の下に
+<input type="number" id="lineScore" class="score-input" placeholder="点">
+点
+<button onclick="addLine()">追加</button>
+<div id="lineError"></div>
+<div id="lineList"></div>
+</div>
+
+<div class="bulk">
+<textarea id="bulkInput" placeholder="曲名を改行区切りで入力"></textarea><br><br>
+<button onclick="loadSongs()">曲を読み込む</button>
+</div>
+
+<div class="main">
+  <div class="middle">
+    <div class="pool-pane" id="pool"></div>
+    <div class="ranking-pane" id="ranking"></div>
+  </div>
+
+  <div class="bottom-pane">
+    <h3 id="memoTitle">曲を選択してください</h3>
+    <textarea id="memoText" placeholder="メモを記入できます"></textarea>
+  </div>
+</div>
+
+<script>
+let pool=[],ranking=[],lines=[],selectedIndex=null;
+let sortablePool,sortableRanking;
+
+/* 保存 */
+function saveData(){
+  localStorage.setItem("rankingToolData",JSON.stringify({
+    pool,ranking,lines,
+    max:maxScore.value,
+    min:minScore.value
+  }));
+}
+
+/* 読込 */
+function loadData(){
+  const raw=localStorage.getItem("rankingToolData");
+  if(!raw) return;
+  const data=JSON.parse(raw);
+  pool=data.pool||[];
+  ranking=data.ranking||[];
+  lines=data.lines||[];
+  maxScore.value=data.max||85;
+  minScore.value=data.min||65;
+  render();
+}
+
+function resetAll(){
+  pool=[];ranking=[];lines=[];selectedIndex=null;
+  render();
+}
+
+/* ライン */
+function validateLine(rank,score){
+  if(ranking.length===0) return "先に曲を追加してください。";
+  if(rank<1||rank>ranking.length) return "順位が不正です。";
+  if(score>maxScore.value||score<minScore.value) return "点数が範囲外です。";
+  if(lines.some(l=>l.rank===rank)) return "同順位ラインは追加不可。";
+  return null;
+}
+
+function addLine(){
+  const rank=Number(lineRank.value);
+  const score=Number(lineScore.value);
+  const error=validateLine(rank,score);
+  if(error){ lineError.textContent=error; return; }
+  lineError.textContent="";
+  lines.push({rank,score});
+  lines.sort((a,b)=>a.rank-b.rank);
+  render();
+}
+
+function removeLine(i){
+  lines.splice(i,1);
+  render();
+}
+
+function calculateScore(i){
+  const max=Number(maxScore.value);
+  const min=Number(minScore.value);
+  const bp=[{rank:1,score:max},...lines,{rank:ranking.length,score:min}]
+  .sort((a,b)=>a.rank-b.rank);
+
+  for(let j=0;j<bp.length-1;j++){
+    const a=bp[j],b=bp[j+1];
+    if(i+1>=a.rank && i+1<=b.rank){
+      const r=(i+1-a.rank)/(b.rank-a.rank);
+      return Math.round(a.score-r*(a.score-b.score));
+    }
+  }
+  return min;
+}
+
+/* 統計 */
+function updateStats(){
+  if(ranking.length===0){
+    statsPanel.textContent="審査情報：曲数 0 ｜ 平均 0 ｜ 標準偏差 0";
+    return;
+  }
+
+  const scores=ranking.map((_,i)=>calculateScore(i));
+  const avg=scores.reduce((a,b)=>a+b,0)/scores.length;
+  const varc=scores.reduce((a,b)=>a+(b-avg)**2,0)/scores.length;
+  const std=Math.sqrt(varc);
+
+  statsPanel.textContent=
+  "審査情報：曲数 "+scores.length+
+  " ｜ 平均 "+avg.toFixed(2)+
+  " ｜ 標準偏差 "+std.toFixed(2);
+}
+
+/* 描画 */
+function render(){
+  const poolDiv=document.getElementById("pool");
+  const rankingDiv=document.getElementById("ranking");
+  const lineList=document.getElementById("lineList");
+
+  poolDiv.innerHTML="";
+  rankingDiv.innerHTML="";
+  lineList.innerHTML="";
+
+  lines.forEach((l,i)=>{
+    const span=document.createElement("span");
+    span.textContent=l.rank+"位→"+l.score+"点 ";
+    const btn=document.createElement("button");
+    btn.textContent="削除";
+    btn.onclick=()=>removeLine(i);
+    span.appendChild(btn);
+    lineList.appendChild(span);
+  });
+
+  pool.forEach(song=>{
+    const div=document.createElement("div");
+    div.className="card";
+    div.textContent=song.name;
+    poolDiv.appendChild(div);
+  });
+
+  ranking.forEach((song,i)=>{
+    const div=document.createElement("div");
+    div.className="card"+(i===selectedIndex?" selected":"");
+
+    const header=document.createElement("div");
+    header.className="card-header";
+
+    const name=document.createElement("span");
+    name.textContent=(i+1)+". "+song.name;
+    name.onclick=()=>{
+      selectedIndex=i;
+      memoTitle.textContent=song.name;
+      memoText.value=song.memo||"";
+      render();
+    };
+
+    const score=document.createElement("span");
+    score.className="score";
+    score.textContent=calculateScore(i)+"点";
+
+    header.appendChild(name);
+    header.appendChild(score);
+    div.appendChild(header);
+    rankingDiv.appendChild(div);
+
+    const match=lines.find(l=>l.rank===i+1);
+    if(match){
+      const d=document.createElement("div");
+      d.className="line-divider";
+      const label=document.createElement("div");
+      label.className="line-label";
+      label.textContent=match.score+"点ライン";
+      d.appendChild(label);
+      rankingDiv.appendChild(d);
+    }
+  });
+
+  updateStats();
+
+  if(sortablePool) sortablePool.destroy();
+  if(sortableRanking) sortableRanking.destroy();
+
+  sortablePool=new Sortable(poolDiv,{
+    group:"shared",
+    animation:120
+  });
+
+  sortableRanking=new Sortable(rankingDiv,{
+    group:"shared",
+    animation:120,
+    onAdd:function(evt){
+      const moved=pool.splice(evt.oldIndex,1)[0];
+      ranking.splice(evt.newIndex,0,moved);
+      render();
+    },
+    onEnd:function(evt){
+      const moved=ranking.splice(evt.oldIndex,1)[0];
+      ranking.splice(evt.newIndex,0,moved);
+      render();
+    }
+  });
+}
+
+memoText.addEventListener("input",()=>{
+  if(selectedIndex!==null){
+    ranking[selectedIndex].memo=memoText.value;
+  }
+});
+
+function loadSongs(){
+  const list=bulkInput.value.split("\n").map(s=>s.trim()).filter(Boolean);
+  pool=list.map(name=>({name,memo:""}));
+  ranking=[];
+  render();
+}
+
+render();
+</script>
+
+</body>
+</html>
