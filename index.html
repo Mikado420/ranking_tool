@@ -1,389 +1,1199 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Ranking Tool</title>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ランキングツール</title>
 <style>
-*{box-sizing:border-box;}
-html,body{height:100%;margin:0;}
+  :root {
+    --bg: #f4f6f8;
+    --card: #ffffff;
+    --line: #d9dde3;
+    --text: #101418;
+    --muted: #6c7680;
+    --accent: #007aff;
+    --shadow: 0 2px 8px rgba(16, 20, 24, 0.06);
 
-body{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  background:#eef2f7;
-  display:flex;
-  flex-direction:column;
-}
+    --orange1: #fff3e0;
+    --orange2: #ffe0b2;
+    --orange3: #ffcc80;
+    --orange4: #ffb74d;
+    --orange5: #ffa726;
+    --blue0: #e3f2fd;
+  }
 
-header{
-  background:#1e3a8a;
-  color:white;
-  padding:14px 20px;
-  font-size:20px;
-  font-weight:bold;
-}
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overscroll-behavior: none;
+  }
 
-.controls,.line-config,.bulk,.stats{
-  padding:10px;
-  background:white;
-  border-bottom:1px solid #ddd;
-}
+  body.dragging {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
 
-button{
-  padding:6px 12px;
-  border:none;
-  border-radius:6px;
-  cursor:pointer;
-  background:#2563eb;
-  color:white;
-}
+  header {
+    height: 52px;
+    display: flex;
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+  }
 
-input,textarea{
-  font-size:16px; /* iOS拡大防止 */
-}
+  header button {
+    flex: 1;
+    border: 0;
+    background: #fff;
+    font-size: 16px;
+    color: var(--muted);
+    touch-action: manipulation;
+  }
 
-.score-input{
-  width:60px;
-  text-align:center;
-}
+  header button.activeBtn {
+    color: var(--accent);
+    font-weight: 700;
+    background: #f8fbff;
+  }
 
-.main{
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  min-height:0;
-}
+  .screen {
+    display: none;
+    height: calc(100vh - 52px);
+  }
 
-/* 一覧を広くする */
-.middle{
-  flex:1 1 auto;
-  display:flex;
-  min-height:0;
-}
+  .screen.active {
+    display: flex;
+    flex-direction: column;
+  }
 
-.pool-pane,.ranking-pane{
-  flex:1;
-  overflow-y:auto;
-  -webkit-overflow-scrolling:touch;
-  padding:12px;
-}
+  .config-scroll {
+    flex: 1;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px;
+  }
 
-.pool-pane{
-  border-right:1px solid #ddd;
-  background:#f9fafb;
-}
+  .section {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
 
-.card{
-  background:white;
-  border:1px solid #ddd;
-  border-radius:8px;
-  padding:10px;
-  margin-bottom:8px;
-}
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid #edf0f4;
+    background: #fbfcfe;
+  }
 
-.card.selected{
-  border:2px solid #2563eb;
-  background:#eff6ff;
-}
+  .section-body {
+    padding: 12px;
+  }
 
-.card-header{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-}
+  textarea,
+  input {
+    font-size: 16px;
+  }
 
-.score{
-  font-weight:bold;
-  color:#0ea5e9;
-}
+  textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 130px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 12px;
+    outline: none;
+    resize: vertical;
+    background: #fff;
+    color: var(--text);
+    -webkit-user-select: text;
+    user-select: text;
+  }
 
-.line-divider{
-  border-top:2px dashed #f97316;
-  margin:14px 0;
-  position:relative;
-}
+  .row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
 
-.line-label{
-  position:absolute;
-  left:50%;
-  transform:translateX(-50%);
-  top:-10px;
-  background:white;
-  padding:0 6px;
-  font-size:12px;
-  color:#ea580c;
-}
+  .row + .row {
+    margin-top: 10px;
+  }
 
-/* メモは20% */
-.bottom-pane{
-  flex:0 0 20%;
-  min-height:120px;
-  border-top:1px solid #ddd;
-  background:white;
-  padding:12px;
-  display:flex;
-  flex-direction:column;
-}
+  .inline-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--muted);
+  }
 
-#memoText{
-  flex:1;
-  border:1px solid #ddd;
-  border-radius:6px;
-  padding:6px;
-}
+  .num {
+    width: 78px;
+    box-sizing: border-box;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 10px;
+    outline: none;
+    background: #fff;
+    color: var(--text);
+    -webkit-user-select: text;
+    user-select: text;
+  }
 
-#memoText::placeholder{
-  color:#9ca3af;
-}
+  .btn {
+    border: 0;
+    border-radius: 12px;
+    padding: 10px 14px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    touch-action: manipulation;
+  }
 
-#lineError{
-  color:#dc2626;
-  font-size:13px;
-  margin-top:4px;
-}
+  .btn.secondary {
+    background: #eef3f8;
+    color: #2b3440;
+  }
+
+  .line-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .line-item {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .line-item input {
+    width: 100%;
+  }
+
+  .line-remove {
+    border: 0;
+    background: transparent;
+    color: #c24d4d;
+    font-size: 18px;
+    line-height: 1;
+    padding: 6px 8px;
+    touch-action: manipulation;
+  }
+
+  .main-shell {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .lists-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: transparent;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .panel-header {
+    flex: 0 0 auto;
+    padding: 10px 12px 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .header-action {
+    border: 0;
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: #eef3f8;
+    color: #2b3440;
+    font-size: 12px;
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+
+  .list {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 0 8px;
+    touch-action: pan-y;
+  }
+
+  .item {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    margin: 6px 10px;
+    padding: 12px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .item.song {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .item.rank {
+    padding: 0;
+    overflow: hidden;
+    align-items: stretch;
+    background: var(--card);
+  }
+
+  .item.rank.dragging {
+    opacity: 0.92;
+    box-shadow: 0 12px 30px rgba(16, 20, 24, 0.18);
+    transform: scale(1.01);
+    z-index: 9999;
+    pointer-events: none;
+  }
+
+  .rank-drag-zone {
+    flex: 0 0 58px;
+    background: #d9dde3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .drag-handle {
+    width: 2.1em;
+    text-align: center;
+    color: #8a949f;
+    font-size: 18px;
+    line-height: 1;
+    cursor: grab;
+  }
+
+  .rank-content {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    background: var(--card);
+  }
+
+  /* お気に入り(星マーク)のために position: relative を追加 */
+  .score-badge {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3.2em;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .score-badge.tier-5 { background: var(--orange5); color: #fff; }
+  .score-badge.tier-4 { background: var(--orange4); color: #fff; }
+  .score-badge.tier-3 { background: var(--orange3); color: #2b3440; }
+  .score-badge.tier-2 { background: var(--orange2); color: #2b3440; }
+  .score-badge.tier-1 { background: var(--orange1); color: #2b3440; }
+  .score-badge.tier-white { background: #ffffff; color: #2b3440; box-shadow: inset 0 0 0 1px var(--line); }
+  .score-badge.tier-0 { background: var(--blue0); color: #2b3440; }
+
+  .fav-star {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    font-size: 16px;
+    color: #ffd700;
+    text-shadow: 
+      -1px -1px 0 #101418,  
+       1px -1px 0 #101418,
+      -1px  1px 0 #101418,
+       1px  1px 0 #101418;
+    line-height: 1;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* 点数ライン */
+  .rank-line-divider {
+    display: flex;
+    align-items: center;
+    margin: 4px 10px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--accent);
+  }
+
+  .rank-line-divider::before,
+  .rank-line-divider::after {
+    content: "";
+    flex: 1;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px;
+    opacity: 0.4;
+  }
+
+  .rank-line-divider::before { margin-right: 8px; }
+  .rank-line-divider::after { margin-left: 8px; }
+
+  .rank-num {
+    flex: 0 0 auto;
+    width: 2.2em;
+    font-weight: 800;
+    color: var(--accent);
+    text-align: right;
+  }
+
+  .song-title,
+  .rank-title {
+    min-width: 0;
+    word-break: break-word;
+    line-height: 1.35;
+  }
+
+  .placeholder {
+    margin: 6px 10px;
+    height: 56px;
+    border-radius: 14px;
+    border: 2px dashed rgba(0, 122, 255, 0.55);
+    background: rgba(0, 122, 255, 0.06);
+  }
+
+  .stats-bar {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--line);
+    background: #fff;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(16, 20, 24, 0.42);
+    z-index: 20000;
+    padding: 16px;
+  }
+
+  .modal.open {
+    display: flex;
+  }
+
+  .modal-card {
+    width: min(100%, 520px);
+    max-height: min(82vh, 720px);
+    overflow: hidden;
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal-head {
+    flex: 0 0 auto;
+    padding: 14px 14px 12px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: #fbfcfe;
+  }
+
+  .modal-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text);
+  }
+
+  .modal-close {
+    border: 0;
+    background: #eef3f8;
+    color: #2b3440;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+
+  .modal-body {
+    flex: 1;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px 12px 14px;
+  }
+
+  .order-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .order-table th,
+  .order-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #edf0f4;
+    vertical-align: top;
+  }
+
+  .order-table th {
+    text-align: left;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .order-table td.scorecell {
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .order-table tr:nth-child(even) td {
+    background: #fcfdff;
+  }
+
+  .order-rank {
+    width: 3.2em;
+    color: var(--accent);
+    font-weight: 800;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  /* お気に入り(星マーク)のために position: relative を追加 */
+  .order-score-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3.2em;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-weight: 800;
+    line-height: 1;
+  }
 </style>
 </head>
 <body>
+  <header>
+    <button id="btnConfig" class="activeBtn" onclick="switchScreen('config')">設定</button>
+    <button id="btnMain" onclick="switchScreen('main')">順位</button>
+  </header>
 
-<header>Ranking Tool</header>
+  <div id="config" class="screen active">
+    <div class="config-scroll">
+      <div class="section">
+        <div class="section-title">曲リスト入力</div>
+        <div class="section-body">
+          <textarea id="inputSongs" placeholder="曲名を改行で入力"></textarea>
+          <div class="row" style="margin-top:10px;">
+            <button class="btn" onclick="loadSongs()">読み込み</button>
+          </div>
+        </div>
+      </div>
 
-<div class="controls">
-  上限 <input type="number" id="maxScore" class="score-input" value="85">
-  下限 <input type="number" id="minScore" class="score-input" value="65">
-  <button onclick="render()">再計算</button>
-  <button onclick="saveData()">保存</button>
-  <button onclick="loadData()">読込</button>
-  <button onclick="resetAll()">リセット</button>
-</div>
+      <div class="section">
+        <div class="section-title">点数設定</div>
+        <div class="section-body">
+          <div class="row">
+            <label class="inline-label">上限 <input id="maxPoint" class="num" type="number" value="85"></label>
+            <label class="inline-label">下限 <input id="minPoint" class="num" type="number" value="65"></label>
+          </div>
+        </div>
+      </div>
 
-<div class="stats" id="statsPanel">
-審査情報：曲数 0 ｜ 平均 0 ｜ 標準偏差 0
-</div>
-
-<div class="line-config">
-ライン追加：
-<input type="number" id="lineRank" class="score-input" placeholder="位">
-位の下に
-<input type="number" id="lineScore" class="score-input" placeholder="点">
-点
-<button onclick="addLine()">追加</button>
-<div id="lineError"></div>
-<div id="lineList"></div>
-</div>
-
-<div class="bulk">
-<textarea id="bulkInput" placeholder="曲名を改行区切りで入力"></textarea><br><br>
-<button onclick="loadSongs()">曲を読み込む</button>
-</div>
-
-<div class="main">
-  <div class="middle">
-    <div class="pool-pane" id="pool"></div>
-    <div class="ranking-pane" id="ranking"></div>
+      <div class="section">
+        <div class="section-title">点数ライン</div>
+        <div class="section-body">
+          <div id="lineList" class="line-list"></div>
+          <div class="row" style="margin-top:10px;">
+            <button class="btn secondary" onclick="addLine()">＋ ライン追加</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="bottom-pane">
-    <h3 id="memoTitle">曲を選択してください</h3>
-    <textarea id="memoText" placeholder="メモを記入できます"></textarea>
+  <div id="main" class="screen">
+    <div class="main-shell">
+      <div class="lists-shell">
+        <section id="songPanel" class="panel">
+          <div class="panel-header">曲リスト</div>
+          <div id="songList" class="list"></div>
+        </section>
+
+        <section id="rankPanel" class="panel">
+          <div class="panel-header">
+            <span>順位</span>
+            <button class="header-action" onclick="openNumberOrderModal()">No.順表</button>
+          </div>
+          <div id="rankList" class="list"></div>
+        </section>
+      </div>
+
+      <div id="statsBar" class="stats-bar"></div>
+    </div>
   </div>
-</div>
+
+  <div id="numberOrderModal" class="modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="numberOrderTitle">
+      <div class="modal-head">
+        <div id="numberOrderTitle" class="modal-title">No.順表</div>
+        <button class="modal-close" onclick="closeNumberOrderModal()">閉じる</button>
+      </div>
+      <div class="modal-body" id="numberOrderBody"></div>
+    </div>
+  </div>
 
 <script>
-let pool=[],ranking=[],lines=[],selectedIndex=null;
-let sortablePool,sortableRanking;
+  const state = {
+    songs: [],
+    allSongs: [],
+    rank:[],
+    favorites: new Set(), // お気に入り登録の管理用
+    nextId: 1,
+    drag: null,
+    songPress: null
+  };
 
-/* 保存 */
-function saveData(){
-  localStorage.setItem("rankingToolData",JSON.stringify({
-    pool,ranking,lines,
-    max:maxScore.value,
-    min:minScore.value
-  }));
-}
+  const configEl = document.getElementById('config');
+  const mainEl = document.getElementById('main');
+  const btnConfig = document.getElementById('btnConfig');
+  const btnMain = document.getElementById('btnMain');
+  const songPanelEl = document.getElementById('songPanel');
+  const rankPanelEl = document.getElementById('rankPanel');
+  const songListEl = document.getElementById('songList');
+  const rankListEl = document.getElementById('rankList');
+  const lineListEl = document.getElementById('lineList');
+  const statsBarEl = document.getElementById('statsBar');
+  const maxPointEl = document.getElementById('maxPoint');
+  const minPointEl = document.getElementById('minPoint');
+  const numberOrderModalEl = document.getElementById('numberOrderModal');
+  const numberOrderBodyEl = document.getElementById('numberOrderBody');
 
-/* 読込 */
-function loadData(){
-  const raw=localStorage.getItem("rankingToolData");
-  if(!raw) return;
-  const data=JSON.parse(raw);
-  pool=data.pool||[];
-  ranking=data.ranking||[];
-  lines=data.lines||[];
-  maxScore.value=data.max||85;
-  minScore.value=data.min||65;
-  render();
-}
+  function switchScreen(id) {
+    configEl.classList.toggle('active', id === 'config');
+    mainEl.classList.toggle('active', id === 'main');
+    btnConfig.classList.toggle('activeBtn', id === 'config');
+    btnMain.classList.toggle('activeBtn', id === 'main');
+  }
 
-function resetAll(){
-  pool=[];ranking=[];lines=[];selectedIndex=null;
-  render();
-}
+  function createSong(text) {
+    return { id: state.nextId++, text: text.trim() };
+  }
 
-/* ライン */
-function validateLine(rank,score){
-  if(ranking.length===0) return "先に曲を追加してください。";
-  if(rank<1||rank>ranking.length) return "順位が不正です。";
-  if(score>maxScore.value||score<minScore.value) return "点数が範囲外です。";
-  if(lines.some(l=>l.rank===rank)) return "同順位ラインは追加不可。";
-  return null;
-}
+  function loadSongs() {
+    const lines = document.getElementById('inputSongs').value
+      .split('\n')
+      .map(v => v.trim())
+      .filter(Boolean);
 
-function addLine(){
-  const rank=Number(lineRank.value);
-  const score=Number(lineScore.value);
-  const error=validateLine(rank,score);
-  if(error){ lineError.textContent=error; return; }
-  lineError.textContent="";
-  lines.push({rank,score});
-  lines.sort((a,b)=>a.rank-b.rank);
-  render();
-}
+    state.allSongs = lines.map(createSong);
+    state.songs = [...state.allSongs];
+    state.rank =[];
+    render();
+    switchScreen('main');
+  }
 
-function removeLine(i){
-  lines.splice(i,1);
-  render();
-}
+  function bindLineRow(row) {
+    const inputs = row.querySelectorAll('input');
+    inputs.forEach(input => input.addEventListener('input', render));
+  }
 
-function calculateScore(i){
-  const max=Number(maxScore.value);
-  const min=Number(minScore.value);
-  const bp=[{rank:1,score:max},...lines,{rank:ranking.length,score:min}]
-  .sort((a,b)=>a.rank-b.rank);
+  function addLine(rankValue = '', pointValue = '') {
+    const wrap = document.createElement('div');
+    wrap.className = 'line-item';
+    wrap.innerHTML = `
+      <input class="num" type="number" placeholder="順位" value="${rankValue}">
+      <input class="num" type="number" placeholder="点数" value="${pointValue}">
+      <button class="line-remove" type="button" aria-label="削除">×</button>
+    `;
+    wrap.querySelector('.line-remove').addEventListener('click', () => {
+      wrap.remove();
+      render();
+    });
+    bindLineRow(wrap);
+    lineListEl.appendChild(wrap);
+    render();
+  }
 
-  for(let j=0;j<bp.length-1;j++){
-    const a=bp[j],b=bp[j+1];
-    if(i+1>=a.rank && i+1<=b.rank){
-      const r=(i+1-a.rank)/(b.rank-a.rank);
-      return Math.round(a.score-r*(a.score-b.score));
+  function getLines() {
+    const arr =[];
+    lineListEl.querySelectorAll('.line-item').forEach(row => {
+      const inputs = row.querySelectorAll('input');
+      const r = parseInt(inputs[0].value, 10);
+      const p = parseInt(inputs[1].value, 10);
+      if (Number.isFinite(r) && Number.isFinite(p)) {
+        arr.push({ rank: r, point: p });
+      }
+    });
+    arr.sort((a, b) => a.rank - b.rank);
+    return arr;
+  }
+
+  function calcScores() {
+    const maxPoint = parseInt(maxPointEl.value, 10);
+    const minPoint = parseInt(minPointEl.value, 10);
+    const n = state.rank.length;
+
+    if (!Number.isFinite(maxPoint) || !Number.isFinite(minPoint) || n === 0) {
+      return[];
+    }
+
+    const controls =[
+      { rank: 1, point: maxPoint },
+      ...getLines().filter(x => x.rank >= 1 && x.rank <= n),
+      { rank: n, point: minPoint }
+    ].sort((a, b) => a.rank - b.rank);
+
+    const deduped =[];
+    for (const c of controls) {
+      if (!deduped.length || deduped[deduped.length - 1].rank !== c.rank) {
+        deduped.push(c);
+      } else {
+        deduped[deduped.length - 1] = c;
+      }
+    }
+
+    const scores = new Array(n).fill('');
+    for (let i = 0; i < deduped.length - 1; i++) {
+      const a = deduped[i];
+      const b = deduped[i + 1];
+      const span = b.rank - a.rank + 1;
+
+      if (span <= 1) {
+        scores[a.rank - 1] = Math.round(a.point);
+        continue;
+      }
+
+      const step = (a.point - b.point) / (span - 1);
+      for (let k = 0; k < span; k++) {
+        scores[a.rank - 1 + k] = Math.round(a.point - step * k);
+      }
+    }
+
+    if (scores[0] === '') scores[0] = maxPoint;
+    for (let i = 1; i < scores.length; i++) {
+      if (scores[i] === '') scores[i] = Math.max(minPoint, scores[i - 1] - 1);
+    }
+
+    return scores;
+  }
+
+  function scoreTier(score) {
+    if (!Number.isFinite(score)) return 0;
+    if (score >= 90) return 5;
+    if (score >= 85) return 4;
+    if (score >= 80) return 3;
+    if (score >= 75) return 2;
+    if (score >= 70) return 1;
+    if (score >= 65) return 'white'; // 65〜69帯は白
+    return 0;
+  }
+
+  function scoreWrapClass(score) {
+    return `score-badge tier-${scoreTier(score)}`;
+  }
+
+  function updatePanelRatio() {
+    const songCount = state.songs.length;
+    const songFlex = Math.max(0.35, Math.min(1.25, songCount / 8 || 0.35));
+    const rankFlex = Math.max(1.6, 3 - songFlex);
+
+    songPanelEl.style.flex = String(songFlex);
+    rankPanelEl.style.flex = String(rankFlex);
+  }
+
+  function render() {
+    updatePanelRatio();
+
+    songListEl.innerHTML = '';
+    rankListEl.innerHTML = '';
+
+    state.songs.forEach((song) => {
+      const item = document.createElement('div');
+      item.className = 'item song';
+      item.innerHTML = `
+        <div class="song-title">${escapeHtml(song.text)}</div>
+        <div class="score"></div>
+      `;
+      item.addEventListener('pointerdown', (e) => onSongPointerDown(e, item, song.id), { passive: false });
+      songListEl.appendChild(item);
+    });
+
+    const scores = calcScores();
+    const lines = getLines();
+    const lineMap = new Map();
+    lines.forEach(l => lineMap.set(l.rank, l.point));
+
+    state.rank.forEach((song, index) => {
+      // 点数ラインの挿入（表記変更）
+      if (lineMap.has(index + 1)) {
+        const divider = document.createElement('div');
+        divider.className = 'rank-line-divider';
+        divider.textContent = `点数ライン：${lineMap.get(index + 1)}点`;
+        rankListEl.appendChild(divider);
+      }
+
+      const score = scores[index];
+      const isFav = state.favorites.has(song.id);
+      const item = document.createElement('div');
+      item.className = 'item rank';
+      item.dataset.id = String(song.id);
+
+      item.innerHTML = `
+        <div class="rank-drag-zone" aria-label="ドラッグ">
+          <div class="drag-handle">≡</div>
+        </div>
+        <div class="rank-content">
+          <div class="rank-num">${index + 1}</div>
+          <div class="rank-title">${escapeHtml(song.text)}</div>
+          <div class="${scoreWrapClass(score)}" style="cursor: pointer;" title="タップでお気に入り登録/解除">
+            ${score ?? ''}
+            ${isFav ? '<div class="fav-star">★</div>' : ''}
+          </div>
+        </div>
+      `;
+
+      // 点数部分のクリックでお気に入り切り替え
+      const badge = item.querySelector('.score-badge');
+      badge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (state.favorites.has(song.id)) {
+          state.favorites.delete(song.id);
+        } else {
+          state.favorites.add(song.id);
+        }
+        render(); // 再描画
+      });
+
+      const zone = item.querySelector('.rank-drag-zone');
+      zone.addEventListener('pointerdown', (e) => startRankDrag(e, item, song.id), { passive: false });
+
+      rankListEl.appendChild(item);
+    });
+
+    updateStats(scores);
+    if (numberOrderModalEl.classList.contains('open')) {
+      renderNumberOrderModal();
     }
   }
-  return min;
-}
 
-/* 統計 */
-function updateStats(){
-  if(ranking.length===0){
-    statsPanel.textContent="審査情報：曲数 0 ｜ 平均 0 ｜ 標準偏差 0";
-    return;
+  function updateStats(scores) {
+    if (!scores.length) {
+      statsBarEl.textContent = '曲数: 0 ｜ 平均点: - ｜ 標準偏差: -';
+      return;
+    }
+
+    const count = scores.length;
+    const avg = scores.reduce((a, b) => a + b, 0) / count;
+    const variance = scores.reduce((a, b) => a + (b - avg) ** 2, 0) / count;
+    const sd = Math.sqrt(variance);
+
+    statsBarEl.textContent =
+      `曲数: ${count} ｜ 平均点: ${avg.toFixed(1)} ｜ 標準偏差: ${sd.toFixed(1)}`;
   }
 
-  const scores=ranking.map((_,i)=>calculateScore(i));
-  const avg=scores.reduce((a,b)=>a+b,0)/scores.length;
-  const varc=scores.reduce((a,b)=>a+(b-avg)**2,0)/scores.length;
-  const std=Math.sqrt(varc);
+  function openNumberOrderModal() {
+    renderNumberOrderModal();
+    numberOrderModalEl.classList.add('open');
+    numberOrderModalEl.setAttribute('aria-hidden', 'false');
+  }
 
-  statsPanel.textContent=
-  "審査情報：曲数 "+scores.length+
-  " ｜ 平均 "+avg.toFixed(2)+
-  " ｜ 標準偏差 "+std.toFixed(2);
-}
+  function closeNumberOrderModal() {
+    numberOrderModalEl.classList.remove('open');
+    numberOrderModalEl.setAttribute('aria-hidden', 'true');
+  }
 
-/* 描画 */
-function render(){
-  const poolDiv=document.getElementById("pool");
-  const rankingDiv=document.getElementById("ranking");
-  const lineList=document.getElementById("lineList");
+  function renderNumberOrderModal() {
+    const scores = calcScores();
+    const scoreById = new Map();
+    state.rank.forEach((song, index) => {
+      scoreById.set(song.id, scores[index]);
+    });
 
-  poolDiv.innerHTML="";
-  rankingDiv.innerHTML="";
-  lineList.innerHTML="";
+    const entries = state.allSongs.map((song, idx) => ({
+      id: song.id,
+      no: idx + 1,
+      title: song.text,
+      score: scoreById.has(song.id) ? scoreById.get(song.id) : null
+    }));
 
-  lines.forEach((l,i)=>{
-    const span=document.createElement("span");
-    span.textContent=l.rank+"位→"+l.score+"点 ";
-    const btn=document.createElement("button");
-    btn.textContent="削除";
-    btn.onclick=()=>removeLine(i);
-    span.appendChild(btn);
-    lineList.appendChild(span);
+    if (!entries.length) {
+      numberOrderBodyEl.innerHTML = '<div style="padding:8px 2px;color:var(--muted);font-size:14px;">曲がありません。</div>';
+      return;
+    }
+
+    let html = `
+      <table class="order-table">
+        <thead>
+          <tr>
+            <th style="width:3.4em;">No.</th>
+            <th>曲名</th>
+            <th style="width:4.5em;">点数</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    for (const row of entries) {
+      const isFav = state.favorites.has(row.id);
+      html += `
+        <tr>
+          <td class="order-rank">${row.no}</td>
+          <td>${escapeHtml(row.title)}</td>
+          <td class="scorecell">
+            <span class="order-score-wrap ${scoreWrapClass(row.score)}" style="cursor: pointer;" data-id="${row.id}" title="タップでお気に入り登録/解除">
+              ${Number.isFinite(row.score) ? row.score : '-'}
+              ${isFav ? '<div class="fav-star">★</div>' : ''}
+            </span>
+          </td>
+        </tr>
+      `;
+    }
+
+    html += `</tbody></table>`;
+    numberOrderBodyEl.innerHTML = html;
+  }
+
+  numberOrderModalEl.addEventListener('click', (e) => {
+    if (e.target === numberOrderModalEl) closeNumberOrderModal();
   });
 
-  pool.forEach(song=>{
-    const div=document.createElement("div");
-    div.className="card";
-    div.textContent=song.name;
-    poolDiv.appendChild(div);
-  });
-
-  ranking.forEach((song,i)=>{
-    const div=document.createElement("div");
-    div.className="card"+(i===selectedIndex?" selected":"");
-
-    const header=document.createElement("div");
-    header.className="card-header";
-
-    const name=document.createElement("span");
-    name.textContent=(i+1)+". "+song.name;
-    name.onclick=()=>{
-      selectedIndex=i;
-      memoTitle.textContent=song.name;
-      memoText.value=song.memo||"";
+  // モーダル内の点数クリックでもお気に入り切り替えを可能にする
+  numberOrderBodyEl.addEventListener('click', (e) => {
+    const wrap = e.target.closest('.order-score-wrap');
+    if (wrap) {
+      const id = parseInt(wrap.dataset.id, 10);
+      if (state.favorites.has(id)) {
+        state.favorites.delete(id);
+      } else {
+        state.favorites.add(id);
+      }
+      renderNumberOrderModal();
       render();
+    }
+  });
+
+  function onSongPointerDown(e, itemEl, songId) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (state.drag || state.songPress) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const press = {
+      itemEl,
+      songId,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      dragStarted: false,
+      timer: null,
+      captured: false
     };
 
-    const score=document.createElement("span");
-    score.className="score";
-    score.textContent=calculateScore(i)+"点";
+    state.songPress = press;
 
-    header.appendChild(name);
-    header.appendChild(score);
-    div.appendChild(header);
-    rankingDiv.appendChild(div);
+    try {
+      if (itemEl.setPointerCapture) {
+        itemEl.setPointerCapture(e.pointerId);
+        press.captured = true;
+      }
+    } catch (_) {}
 
-    const match=lines.find(l=>l.rank===i+1);
-    if(match){
-      const d=document.createElement("div");
-      d.className="line-divider";
-      const label=document.createElement("div");
-      label.className="line-label";
-      label.textContent=match.score+"点ライン";
-      d.appendChild(label);
-      rankingDiv.appendChild(d);
-    }
-  });
+    press.timer = setTimeout(() => {
+      if (state.songPress !== press) return;
+      beginSongDrag(press);
+    }, 180);
 
-  updateStats();
-
-  if(sortablePool) sortablePool.destroy();
-  if(sortableRanking) sortableRanking.destroy();
-
-  sortablePool=new Sortable(poolDiv,{
-    group:"shared",
-    animation:120
-  });
-
-  sortableRanking=new Sortable(rankingDiv,{
-    group:"shared",
-    animation:120,
-    onAdd:function(evt){
-      const moved=pool.splice(evt.oldIndex,1)[0];
-      ranking.splice(evt.newIndex,0,moved);
-      render();
-    },
-    onEnd:function(evt){
-      const moved=ranking.splice(evt.oldIndex,1)[0];
-      ranking.splice(evt.newIndex,0,moved);
-      render();
-    }
-  });
-}
-
-memoText.addEventListener("input",()=>{
-  if(selectedIndex!==null){
-    ranking[selectedIndex].memo=memoText.value;
+    document.addEventListener('pointerup', onSongPressUp, { passive: false });
+    document.addEventListener('pointercancel', onSongPressUp, { passive: false });
   }
-});
 
-function loadSongs(){
-  const list=bulkInput.value.split("\n").map(s=>s.trim()).filter(Boolean);
-  pool=list.map(name=>({name,memo:""}));
-  ranking=[];
+  function onSongPressUp(e) {
+    const press = state.songPress;
+    if (!press || e.pointerId !== press.pointerId) return;
+
+    clearTimeout(press.timer);
+
+    if (!press.dragStarted) {
+      cleanupSongPressListeners(press);
+    }
+  }
+
+  function cleanupSongPressListeners(press) {
+    if (press && press.captured && press.itemEl && press.itemEl.releasePointerCapture) {
+      try {
+        if (press.itemEl.hasPointerCapture && press.itemEl.hasPointerCapture(press.pointerId)) {
+          press.itemEl.releasePointerCapture(press.pointerId);
+        }
+      } catch (_) {}
+    }
+
+    document.removeEventListener('pointerup', onSongPressUp);
+    document.removeEventListener('pointercancel', onSongPressUp);
+    state.songPress = null;
+  }
+
+  function beginSongDrag(press) {
+    if (state.songPress !== press) return;
+
+    clearTimeout(press.timer);
+    press.dragStarted = true;
+
+    const itemEl = press.itemEl;
+    const rect = itemEl.getBoundingClientRect();
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'placeholder';
+    songListEl.insertBefore(placeholder, itemEl.nextSibling);
+
+    document.body.classList.add('dragging');
+    itemEl.classList.add('dragging');
+    itemEl.style.position = 'fixed';
+    itemEl.style.left = rect.left + 'px';
+    itemEl.style.top = rect.top + 'px';
+    itemEl.style.width = rect.width + 'px';
+    itemEl.style.margin = '0';
+    itemEl.style.zIndex = '9999';
+    document.body.appendChild(itemEl);
+
+    state.drag = {
+      type: 'song',
+      itemEl,
+      placeholder,
+      songId: press.songId,
+      offsetY: press.startY - rect.top,
+      left: rect.left,
+      pointerId: press.pointerId,
+      active: true
+    };
+
+    moveDraggedItem(press.startY);
+
+    document.addEventListener('pointermove', onDragMove, { passive: false });
+    document.addEventListener('pointerup', onDragEnd, { passive: false });
+    document.addEventListener('pointercancel', onDragEnd, { passive: false });
+  }
+
+  function startRankDrag(e, itemEl, songId) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = itemEl.getBoundingClientRect();
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'placeholder';
+    itemEl.after(placeholder);
+
+    document.body.classList.add('dragging');
+    itemEl.classList.add('dragging');
+    itemEl.style.position = 'fixed';
+    itemEl.style.left = rect.left + 'px';
+    itemEl.style.top = rect.top + 'px';
+    itemEl.style.width = rect.width + 'px';
+    itemEl.style.margin = '0';
+    itemEl.style.zIndex = '9999';
+    document.body.appendChild(itemEl);
+
+    state.drag = {
+      type: 'rank',
+      itemEl,
+      placeholder,
+      songId,
+      offsetY: e.clientY - rect.top,
+      left: rect.left,
+      pointerId: e.pointerId,
+      active: true
+    };
+
+    moveDraggedItem(e.clientY);
+
+    document.addEventListener('pointermove', onDragMove, { passive: false });
+    document.addEventListener('pointerup', onDragEnd, { passive: false });
+    document.addEventListener('pointercancel', onDragEnd, { passive: false });
+  }
+
+  function onDragMove(e) {
+    const drag = state.drag;
+    if (!drag || !drag.active || e.pointerId !== drag.pointerId) return;
+    e.preventDefault();
+    moveDraggedItem(e.clientY);
+  }
+
+  function moveDraggedItem(clientY) {
+    const drag = state.drag;
+    if (!drag || !drag.active) return;
+
+    drag.itemEl.style.top = (clientY - drag.offsetY) + 'px';
+    drag.itemEl.style.left = drag.left + 'px';
+
+    if (drag.type === 'rank') {
+      placePlaceholderInRank(clientY, drag.placeholder);
+      autoScrollRank(clientY);
+      return;
+    }
+
+    const rankRect = rankListEl.getBoundingClientRect();
+    if (clientY >= rankRect.top && clientY <= rankRect.bottom) {
+      placePlaceholderInRank(clientY, drag.placeholder);
+      autoScrollRank(clientY);
+    }
+  }
+
+  function placePlaceholderInRank(clientY, placeholder) {
+    const items =[...rankListEl.querySelectorAll('.rank:not(.dragging)')];
+
+    if (!items.length) {
+      rankListEl.appendChild(placeholder);
+      return;
+    }
+
+    for (const el of items) {
+      const r = el.getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) {
+        rankListEl.insertBefore(placeholder, el);
+        return;
+      }
+    }
+
+    rankListEl.appendChild(placeholder);
+  }
+
+  function autoScrollRank(clientY) {
+    const box = rankListEl.getBoundingClientRect();
+    if (clientY < box.top + 70) {
+      rankListEl.scrollTop -= 12;
+    } else if (clientY > box.bottom - 70) {
+      rankListEl.scrollTop += 12;
+    }
+  }
+
+  function onDragEnd(e) {
+    const drag = state.drag;
+    if (!drag || !drag.active || e.pointerId !== drag.pointerId) return;
+    e.preventDefault();
+
+    if (drag.type === 'song') {
+      if (drag.placeholder.parentElement === rankListEl) {
+        const targetIndex = [...rankListEl.children]
+          .filter(el => !el.classList.contains('rank-line-divider')) // ライン要素を除外
+          .indexOf(drag.placeholder);
+        const sourceIndex = state.songs.findIndex(x => x.id === drag.songId);
+
+        if (sourceIndex >= 0) {
+          const [moved] = state.songs.splice(sourceIndex, 1);
+          const idx = Math.max(0, Math.min(targetIndex, state.rank.length));
+          state.rank.splice(idx, 0, moved);
+        }
+      }
+    } else {
+      const targetIndex =[...rankListEl.children]
+        .filter(el => !el.classList.contains('rank-line-divider')) // ライン要素を除外
+        .indexOf(drag.placeholder);
+      const sourceIndex = state.rank.findIndex(x => x.id === drag.songId);
+
+      if (sourceIndex >= 0) {
+        const [moved] = state.rank.splice(sourceIndex, 1);
+        const idx = Math.max(0, Math.min(targetIndex, state.rank.length));
+        state.rank.splice(idx, 0, moved);
+      }
+    }
+
+    cleanupSongPressListeners(state.songPress);
+    removeDragArtifacts(drag);
+
+    document.removeEventListener('pointermove', onDragMove);
+    document.removeEventListener('pointerup', onDragEnd);
+    document.removeEventListener('pointercancel', onDragEnd);
+
+    state.drag = null;
+    document.body.classList.remove('dragging');
+
+    render();
+  }
+
+  function removeDragArtifacts(drag) {
+    if (drag.itemEl && drag.itemEl.isConnected) {
+      try {
+        if (drag.itemEl.releasePointerCapture && drag.itemEl.hasPointerCapture && drag.itemEl.hasPointerCapture(drag.pointerId)) {
+          drag.itemEl.releasePointerCapture(drag.pointerId);
+        }
+      } catch (_) {}
+      drag.itemEl.removeAttribute('style');
+      drag.itemEl.classList.remove('dragging');
+      drag.itemEl.remove();
+    }
+    if (drag.placeholder && drag.placeholder.isConnected) {
+      drag.placeholder.remove();
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  document.getElementById('maxPoint').addEventListener('input', render);
+  document.getElementById('minPoint').addEventListener('input', render);
+
+  addLine();
   render();
-}
-
-render();
+  statsBarEl.textContent = '曲数: 0 ｜ 平均点: - ｜ 標準偏差: -';
 </script>
-
 </body>
 </html>
