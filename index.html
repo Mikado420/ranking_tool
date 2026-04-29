@@ -633,6 +633,22 @@
     </div>
   </div>
 
+  <div id="memoPromptModal" class="modal" aria-hidden="true">
+    <div class="modal-card" style="width: min(100%, 340px); max-height: unset;">
+      <div class="modal-head" style="border-bottom: none; padding-bottom: 0;">
+        <div class="modal-title">メモの入力</div>
+      </div>
+      <div class="modal-body" style="padding-top: 8px;">
+        <div id="memoPromptDesc" style="font-size: 13px; margin-bottom: 10px; color: var(--muted); word-break: break-word; line-height: 1.4;"></div>
+        <textarea id="memoPromptInput" style="min-height: 80px;"></textarea>
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px;">
+          <button class="btn secondary" id="memoPromptCancel" style="padding: 8px 14px; font-size: 14px;">キャンセル</button>
+          <button class="btn" id="memoPromptOk" style="padding: 8px 18px; font-size: 14px;">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast"></div>
 
 <script>
@@ -660,6 +676,11 @@
   const minPointEl = document.getElementById('minPoint');
   const numberOrderModalEl = document.getElementById('numberOrderModal');
   const numberOrderBodyEl = document.getElementById('numberOrderBody');
+  const memoPromptModalEl = document.getElementById('memoPromptModal');
+  const memoPromptDescEl = document.getElementById('memoPromptDesc');
+  const memoPromptInputEl = document.getElementById('memoPromptInput');
+  const memoPromptCancelBtn = document.getElementById('memoPromptCancel');
+  const memoPromptOkBtn = document.getElementById('memoPromptOk');
 
   // トースト表示用タイマー
   let toastTimer;
@@ -818,15 +839,50 @@
     return false;
   }
 
+  let activeMemoResolve = null;
+
   function promptMemo(songId) {
     const song = state.allSongs.find(s => s.id === songId);
     if (!song) return;
-    const newMemo = prompt(`「${song.text}」のメモを入力してください:`, song.memo || '');
-    if (newMemo !== null) {
-      song.memo = newMemo;
-      render();
+
+    memoPromptDescEl.textContent = `「${song.text}」のメモを入力してください:`;
+    memoPromptInputEl.value = song.memo || '';
+    
+    memoPromptModalEl.classList.add('open');
+    memoPromptModalEl.setAttribute('aria-hidden', 'false');
+    
+    setTimeout(() => {
+      memoPromptInputEl.focus();
+      try {
+        // カーソルを末尾に移動
+        memoPromptInputEl.setSelectionRange(memoPromptInputEl.value.length, memoPromptInputEl.value.length);
+      } catch (e) {}
+    }, 50);
+
+    activeMemoResolve = (val) => {
+      if (val !== null) {
+        song.memo = val;
+        render();
+      }
+    };
+  }
+
+  function closeMemoPrompt(isOk) {
+    memoPromptInputEl.blur(); // ズーム解除・キーボードを閉じる
+    memoPromptModalEl.classList.remove('open');
+    memoPromptModalEl.setAttribute('aria-hidden', 'true');
+    
+    if (activeMemoResolve) {
+      activeMemoResolve(isOk ? memoPromptInputEl.value : null);
+      activeMemoResolve = null;
     }
   }
+
+  memoPromptCancelBtn.addEventListener('click', () => closeMemoPrompt(false));
+  memoPromptOkBtn.addEventListener('click', () => closeMemoPrompt(true));
+  memoPromptModalEl.addEventListener('click', (e) => {
+    if (e.target === memoPromptModalEl) closeMemoPrompt(false);
+  });
 
   // --- コピー機能 ---
   function copyRankOrder() {
