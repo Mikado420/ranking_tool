@@ -230,6 +230,12 @@
     gap: 10px;
   }
 
+  .header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
   .header-action {
     border: 0;
     border-radius: 999px;
@@ -315,7 +321,6 @@
     background: var(--card);
   }
 
-  /* お気に入り(星マーク)のために position: relative を追加 */
   .score-badge {
     position: relative;
     display: inline-flex;
@@ -352,7 +357,6 @@
     z-index: 10;
   }
 
-  /* 点数ライン */
   .rank-line-divider {
     display: flex;
     align-items: center;
@@ -388,6 +392,15 @@
     min-width: 0;
     word-break: break-word;
     line-height: 1.35;
+  }
+
+  .song-memo {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 3px;
+    line-height: 1.3;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .placeholder {
@@ -509,7 +522,6 @@
     white-space: nowrap;
   }
 
-  /* お気に入り(星マーク)のために position: relative を追加 */
   .order-score-wrap {
     position: relative;
     display: inline-flex;
@@ -520,6 +532,27 @@
     border-radius: 999px;
     font-weight: 800;
     line-height: 1;
+  }
+
+  /* コピー完了等のトースト通知 */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(16, 20, 24, 0.85);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 700;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    z-index: 30000;
+  }
+  #toast.show {
+    opacity: 1;
   }
 </style>
 </head>
@@ -574,7 +607,10 @@
         <section id="rankPanel" class="panel">
           <div class="panel-header">
             <span>順位</span>
-            <button class="header-action" onclick="openNumberOrderModal()">No.順表</button>
+            <div class="header-actions">
+              <button class="header-action" onclick="copyRankOrder()">順位順コピー</button>
+              <button class="header-action" onclick="openNumberOrderModal()">No.順表</button>
+            </div>
           </div>
           <div id="rankList" class="list"></div>
         </section>
@@ -588,18 +624,23 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="numberOrderTitle">
       <div class="modal-head">
         <div id="numberOrderTitle" class="modal-title">No.順表</div>
-        <button class="modal-close" onclick="closeNumberOrderModal()">閉じる</button>
+        <div class="header-actions">
+          <button class="header-action" onclick="copyNumberOrder()">No.順コピー</button>
+          <button class="modal-close" onclick="closeNumberOrderModal()">閉じる</button>
+        </div>
       </div>
       <div class="modal-body" id="numberOrderBody"></div>
     </div>
   </div>
 
+  <div id="toast"></div>
+
 <script>
   const state = {
-    songs: [],
+    songs:[],
     allSongs: [],
     rank:[],
-    favorites: new Set(), // お気に入り登録の管理用
+    favorites: new Set(),
     nextId: 1,
     drag: null,
     songPress: null
@@ -620,6 +661,18 @@
   const numberOrderModalEl = document.getElementById('numberOrderModal');
   const numberOrderBodyEl = document.getElementById('numberOrderBody');
 
+  // トースト表示用タイマー
+  let toastTimer;
+  function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toast.classList.remove('show');
+    }, 2500);
+  }
+
   function switchScreen(id) {
     configEl.classList.toggle('active', id === 'config');
     mainEl.classList.toggle('active', id === 'main');
@@ -628,7 +681,7 @@
   }
 
   function createSong(text) {
-    return { id: state.nextId++, text: text.trim() };
+    return { id: state.nextId++, text: text.trim(), memo: '' };
   }
 
   function loadSongs() {
@@ -736,7 +789,7 @@
     if (score >= 80) return 3;
     if (score >= 75) return 2;
     if (score >= 70) return 1;
-    if (score >= 65) return 'white'; // 65〜69帯は白
+    if (score >= 65) return 'white'; 
     return 0;
   }
 
@@ -753,6 +806,66 @@
     rankPanelEl.style.flex = String(rankFlex);
   }
 
+  // --- ダブルタップとメモ機能 ---
+  let lastTap = { time: 0, id: null };
+  function checkDoubleTap(songId) {
+    const now = Date.now();
+    if (lastTap.id === songId && now - lastTap.time < 300) {
+      lastTap = { time: 0, id: null };
+      return true;
+    }
+    lastTap = { time: now, id: songId };
+    return false;
+  }
+
+  function promptMemo(songId) {
+    const song = state.allSongs.find(s => s.id === songId);
+    if (!song) return;
+    const newMemo = prompt(`「${song.text}」のメモを入力してください:`, song.memo || '');
+    if (newMemo !== null) {
+      song.memo = newMemo;
+      render();
+    }
+  }
+
+  // --- コピー機能 ---
+  function copyRankOrder() {
+    const scores = calcScores();
+    let text = '';
+    state.rank.forEach((song, i) => {
+      const score = scores[i];
+      const fav = state.favorites.has(song.id) ? '〇' : '';
+      text += `${song.text}　${score}${fav}\n`;
+    });
+
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('順位順でコピーしました');
+    }).catch(() => {
+      alert('コピーに失敗しました。');
+    });
+  }
+
+  function copyNumberOrder() {
+    const scores = calcScores();
+    const scoreById = new Map();
+    state.rank.forEach((song, i) => scoreById.set(song.id, scores[i]));
+
+    let text = '';
+    state.allSongs.forEach((song) => {
+      const score = scoreById.has(song.id) ? scoreById.get(song.id) : '-';
+      const fav = state.favorites.has(song.id) ? '〇' : '';
+      text += `${song.text}　${score}${fav}\n`;
+    });
+
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('No.順でコピーしました');
+    }).catch(() => {
+      alert('コピーに失敗しました。');
+    });
+  }
+
   function render() {
     updatePanelRatio();
 
@@ -763,7 +876,10 @@
       const item = document.createElement('div');
       item.className = 'item song';
       item.innerHTML = `
-        <div class="song-title">${escapeHtml(song.text)}</div>
+        <div class="song-title">
+          ${escapeHtml(song.text)}
+          ${song.memo ? `<div class="song-memo">${escapeHtml(song.memo)}</div>` : ''}
+        </div>
         <div class="score"></div>
       `;
       item.addEventListener('pointerdown', (e) => onSongPointerDown(e, item, song.id), { passive: false });
@@ -776,7 +892,6 @@
     lines.forEach(l => lineMap.set(l.rank, l.point));
 
     state.rank.forEach((song, index) => {
-      // 点数ラインの挿入（表記変更）
       if (lineMap.has(index + 1)) {
         const divider = document.createElement('div');
         divider.className = 'rank-line-divider';
@@ -796,7 +911,10 @@
         </div>
         <div class="rank-content">
           <div class="rank-num">${index + 1}</div>
-          <div class="rank-title">${escapeHtml(song.text)}</div>
+          <div class="rank-title">
+            ${escapeHtml(song.text)}
+            ${song.memo ? `<div class="song-memo">${escapeHtml(song.memo)}</div>` : ''}
+          </div>
           <div class="${scoreWrapClass(score)}" style="cursor: pointer;" title="タップでお気に入り登録/解除">
             ${score ?? ''}
             ${isFav ? '<div class="fav-star">★</div>' : ''}
@@ -804,7 +922,7 @@
         </div>
       `;
 
-      // 点数部分のクリックでお気に入り切り替え
+      // お気に入り切り替え
       const badge = item.querySelector('.score-badge');
       badge.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -813,7 +931,16 @@
         } else {
           state.favorites.add(song.id);
         }
-        render(); // 再描画
+        render(); 
+      });
+
+      // 順位側アイテムでのダブルタップ判定
+      const rankContent = item.querySelector('.rank-content');
+      rankContent.addEventListener('pointerup', (e) => {
+        if (e.target.closest('.score-badge')) return; // バッジタップ時は除外
+        if (checkDoubleTap(song.id)) {
+          promptMemo(song.id);
+        }
       });
 
       const zone = item.querySelector('.rank-drag-zone');
@@ -865,6 +992,7 @@
       id: song.id,
       no: idx + 1,
       title: song.text,
+      memo: song.memo,
       score: scoreById.has(song.id) ? scoreById.get(song.id) : null
     }));
 
@@ -890,7 +1018,10 @@
       html += `
         <tr>
           <td class="order-rank">${row.no}</td>
-          <td>${escapeHtml(row.title)}</td>
+          <td>
+            ${escapeHtml(row.title)}
+            ${row.memo ? `<div class="song-memo">${escapeHtml(row.memo)}</div>` : ''}
+          </td>
           <td class="scorecell">
             <span class="order-score-wrap ${scoreWrapClass(row.score)}" style="cursor: pointer;" data-id="${row.id}" title="タップでお気に入り登録/解除">
               ${Number.isFinite(row.score) ? row.score : '-'}
@@ -909,7 +1040,6 @@
     if (e.target === numberOrderModalEl) closeNumberOrderModal();
   });
 
-  // モーダル内の点数クリックでもお気に入り切り替えを可能にする
   numberOrderBodyEl.addEventListener('click', (e) => {
     const wrap = e.target.closest('.order-score-wrap');
     if (wrap) {
@@ -967,6 +1097,10 @@
     clearTimeout(press.timer);
 
     if (!press.dragStarted) {
+      // ダブルタップでメモ機能呼び出し
+      if (checkDoubleTap(press.songId)) {
+        promptMemo(press.songId);
+      }
       cleanupSongPressListeners(press);
     }
   }
@@ -1126,8 +1260,8 @@
 
     if (drag.type === 'song') {
       if (drag.placeholder.parentElement === rankListEl) {
-        const targetIndex = [...rankListEl.children]
-          .filter(el => !el.classList.contains('rank-line-divider')) // ライン要素を除外
+        const targetIndex =[...rankListEl.children]
+          .filter(el => !el.classList.contains('rank-line-divider'))
           .indexOf(drag.placeholder);
         const sourceIndex = state.songs.findIndex(x => x.id === drag.songId);
 
@@ -1139,7 +1273,7 @@
       }
     } else {
       const targetIndex =[...rankListEl.children]
-        .filter(el => !el.classList.contains('rank-line-divider')) // ライン要素を除外
+        .filter(el => !el.classList.contains('rank-line-divider'))
         .indexOf(drag.placeholder);
       const sourceIndex = state.rank.findIndex(x => x.id === drag.songId);
 
