@@ -20,6 +20,7 @@
     --orange4: #ffb74d;
     --orange5: #ffa726;
     --blue0: #e3f2fd;
+    --danger: #ff3b30;
   }
 
   html, body {
@@ -166,6 +167,11 @@
     color: #2b3440;
   }
 
+  .btn.danger {
+    background: #fff0f0;
+    color: var(--danger);
+  }
+
   .line-list {
     display: flex;
     flex-direction: column;
@@ -192,6 +198,27 @@
     padding: 6px 8px;
     touch-action: manipulation;
   }
+
+  #saveList {
+    margin-top: 12px;
+    border-top: 1px solid #f0f2f5;
+    max-height: 180px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .save-entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px;
+    border-bottom: 1px solid #f0f2f5;
+  }
+  .save-entry:last-child { border-bottom: none; }
+  .save-info { flex: 1; min-width: 0; margin-right: 10px; }
+  .save-name { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .save-date { font-size: 11px; color: var(--muted); }
+  .save-btns { display: flex; gap: 6px; }
+  .save-btn { font-size: 12px; padding: 5px 10px; border-radius: 8px; border: 0; cursor: pointer; }
 
   .main-shell {
     flex: 1;
@@ -534,7 +561,6 @@
     line-height: 1;
   }
 
-  /* コピー完了等のトースト通知 */
   #toast {
     position: fixed;
     bottom: 24px;
@@ -569,7 +595,8 @@
         <div class="section-body">
           <textarea id="inputSongs" placeholder="曲名を改行で入力"></textarea>
           <div class="row" style="margin-top:10px;">
-            <button class="btn" onclick="loadSongs()">読み込み</button>
+            <button class="btn" onclick="loadSongs()">新規読み込み</button>
+            <button class="btn danger" onclick="clearData()">全クリア</button>
           </div>
         </div>
       </div>
@@ -591,6 +618,17 @@
           <div class="row" style="margin-top:10px;">
             <button class="btn secondary" onclick="addLine()">＋ ライン追加</button>
           </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">データ管理</div>
+        <div class="section-body">
+          <div class="row">
+            <input type="text" id="saveName" placeholder="保存名を入力" style="flex:1; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px;">
+            <button class="btn" onclick="manualSave()">保存</button>
+          </div>
+          <div id="saveList"></div>
         </div>
       </div>
     </div>
@@ -652,6 +690,9 @@
   <div id="toast"></div>
 
 <script>
+  const STORAGE_KEY_AUTO = 'ranking_tool_autosave';
+  const STORAGE_KEY_SAVES = 'ranking_tool_manual_saves';
+
   const state = {
     songs:[],
     allSongs: [],
@@ -681,17 +722,135 @@
   const memoPromptInputEl = document.getElementById('memoPromptInput');
   const memoPromptCancelBtn = document.getElementById('memoPromptCancel');
   const memoPromptOkBtn = document.getElementById('memoPromptOk');
+  const saveListEl = document.getElementById('saveList');
+  const saveNameInput = document.getElementById('saveName');
 
-  // トースト表示用タイマー
+  function autoSave() {
+    const data = getExportData();
+    localStorage.setItem(STORAGE_KEY_AUTO, JSON.stringify(data));
+  }
+
+  function autoLoad() {
+    const saved = localStorage.getItem(STORAGE_KEY_AUTO);
+    if (saved) {
+      try {
+        applyImportData(JSON.parse(saved));
+        render();
+        updateSaveListUI();
+      } catch (e) { console.error("Auto-load failed", e); }
+    } else {
+        addLine();
+        render();
+        updateSaveListUI();
+    }
+  }
+
+  function getExportData() {
+    return {
+      allSongs: state.allSongs,
+      songs: state.songs,
+      rank: state.rank,
+      favorites: Array.from(state.favorites),
+      nextId: state.nextId,
+      maxPoint: maxPointEl.value,
+      minPoint: minPointEl.value,
+      lines: getLines(),
+      timestamp: Date.now()
+    };
+  }
+
+  function applyImportData(data) {
+    state.allSongs = data.allSongs || [];
+    state.songs = data.songs || [];
+    state.rank = data.rank || [];
+    state.favorites = new Set(data.favorites || []);
+    state.nextId = data.nextId || 1;
+    maxPointEl.value = data.maxPoint || 85;
+    minPointEl.value = data.minPoint || 65;
+    
+    lineListEl.innerHTML = '';
+    if (data.lines && data.lines.length > 0) {
+      data.lines.forEach(l => addLine(l.rank, l.point));
+    } else {
+      addLine();
+    }
+  }
+
+  function manualSave() {
+    const name = saveNameInput.value.trim();
+    if (!name) { alert("保存名を入力してください"); return; }
+    const saves = JSON.parse(localStorage.getItem(STORAGE_KEY_SAVES) || '{}');
+    const isOverwrite = !!saves[name];
+    saves[name] = getExportData();
+    localStorage.setItem(STORAGE_KEY_SAVES, JSON.stringify(saves));
+    updateSaveListUI();
+    showToast(isOverwrite ? `「${name}」を上書き保存しました` : `「${name}」を保存しました`);
+  }
+
+  function manualLoad(name) {
+    const saves = JSON.parse(localStorage.getItem(STORAGE_KEY_SAVES) || '{}');
+    if (saves[name]) {
+      if (confirm(`「${name}」を読み込みますか？`)) {
+        applyImportData(saves[name]);
+        saveNameInput.value = name;
+        render();
+        showToast(`「${name}」を読み込みました`);
+      }
+    }
+  }
+
+  function manualDelete(name) {
+    if (confirm(`「${name}」を削除してよろしいですか？`)) {
+      const saves = JSON.parse(localStorage.getItem(STORAGE_KEY_SAVES) || '{}');
+      delete saves[name];
+      localStorage.setItem(STORAGE_KEY_SAVES, JSON.stringify(saves));
+      updateSaveListUI();
+      showToast(`削除しました`);
+    }
+  }
+
+  function updateSaveListUI() {
+    const saves = JSON.parse(localStorage.getItem(STORAGE_KEY_SAVES) || '{}');
+    const keys = Object.keys(saves).sort((a, b) => (saves[b].timestamp || 0) - (saves[a].timestamp || 0));
+    if (keys.length === 0) {
+      saveListEl.innerHTML = '<div style="padding:15px; text-align:center; color:var(--muted); font-size:13px;">保存データなし</div>';
+      return;
+    }
+    saveListEl.innerHTML = keys.map(name => {
+      const date = new Date(saves[name].timestamp).toLocaleString('ja-JP', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+      return `
+        <div class="save-entry">
+          <div class="save-info">
+            <div class="save-name">${escapeHtml(name)}</div>
+            <div class="save-date">${date} (${(saves[name].allSongs || []).length}曲)</div>
+          </div>
+          <div class="save-btns">
+            <button class="save-btn btn secondary" onclick="manualLoad('${escapeHtml(name)}')">ロード</button>
+            <button class="save-btn btn danger" onclick="manualDelete('${escapeHtml(name)}')">削除</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function clearData() {
+    if (confirm("全てのデータを消去しますか？")) {
+      state.allSongs = []; state.songs = []; state.rank = []; state.favorites.clear(); state.nextId = 1;
+      document.getElementById('inputSongs').value = '';
+      saveNameInput.value = '';
+      lineListEl.innerHTML = '';
+      addLine(); render(); autoSave();
+      showToast("クリアしました");
+    }
+  }
+
   let toastTimer;
   function showToast(msg) {
     const toast = document.getElementById('toast');
     toast.textContent = msg;
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toast.classList.remove('show');
-    }, 2500);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2500);
   }
 
   function switchScreen(id) {
@@ -706,11 +865,8 @@
   }
 
   function loadSongs() {
-    const lines = document.getElementById('inputSongs').value
-      .split('\n')
-      .map(v => v.trim())
-      .filter(Boolean);
-
+    const lines = document.getElementById('inputSongs').value.split('\n').map(v => v.trim()).filter(Boolean);
+    if (lines.length === 0) return;
     state.allSongs = lines.map(createSong);
     state.songs = [...state.allSongs];
     state.rank =[];
@@ -720,7 +876,7 @@
 
   function bindLineRow(row) {
     const inputs = row.querySelectorAll('input');
-    inputs.forEach(input => input.addEventListener('input', render));
+    inputs.forEach(input => input.addEventListener('input', () => render()));
   }
 
   function addLine(rankValue = '', pointValue = '') {
@@ -731,10 +887,7 @@
       <input class="num" type="number" placeholder="点数" value="${pointValue}">
       <button class="line-remove" type="button" aria-label="削除">×</button>
     `;
-    wrap.querySelector('.line-remove').addEventListener('click', () => {
-      wrap.remove();
-      render();
-    });
+    wrap.querySelector('.line-remove').addEventListener('click', () => { wrap.remove(); render(); });
     bindLineRow(wrap);
     lineListEl.appendChild(wrap);
     render();
@@ -746,9 +899,7 @@
       const inputs = row.querySelectorAll('input');
       const r = parseInt(inputs[0].value, 10);
       const p = parseInt(inputs[1].value, 10);
-      if (Number.isFinite(r) && Number.isFinite(p)) {
-        arr.push({ rank: r, point: p });
-      }
+      if (Number.isFinite(r) && Number.isFinite(p)) arr.push({ rank: r, point: p });
     });
     arr.sort((a, b) => a.rank - b.rank);
     return arr;
@@ -758,632 +909,305 @@
     const maxPoint = parseInt(maxPointEl.value, 10);
     const minPoint = parseInt(minPointEl.value, 10);
     const n = state.rank.length;
-
-    if (!Number.isFinite(maxPoint) || !Number.isFinite(minPoint) || n === 0) {
-      return[];
-    }
-
-    const controls =[
-      { rank: 1, point: maxPoint },
-      ...getLines().filter(x => x.rank >= 1 && x.rank <= n),
-      { rank: n, point: minPoint }
-    ].sort((a, b) => a.rank - b.rank);
-
+    if (!Number.isFinite(maxPoint) || !Number.isFinite(minPoint) || n === 0) return[];
+    const controls =[{ rank: 1, point: maxPoint }, ...getLines().filter(x => x.rank >= 1 && x.rank <= n), { rank: n, point: minPoint }].sort((a, b) => a.rank - b.rank);
     const deduped =[];
     for (const c of controls) {
-      if (!deduped.length || deduped[deduped.length - 1].rank !== c.rank) {
-        deduped.push(c);
-      } else {
-        deduped[deduped.length - 1] = c;
-      }
+      if (!deduped.length || deduped[deduped.length - 1].rank !== c.rank) deduped.push(c);
+      else deduped[deduped.length - 1] = c;
     }
-
     const scores = new Array(n).fill('');
     for (let i = 0; i < deduped.length - 1; i++) {
-      const a = deduped[i];
-      const b = deduped[i + 1];
-      const span = b.rank - a.rank + 1;
-
-      if (span <= 1) {
-        scores[a.rank - 1] = Math.round(a.point);
-        continue;
-      }
-
+      const a = deduped[i]; const b = deduped[i + 1]; const span = b.rank - a.rank + 1;
+      if (span <= 1) { scores[a.rank - 1] = Math.round(a.point); continue; }
       const step = (a.point - b.point) / (span - 1);
-      for (let k = 0; k < span; k++) {
-        scores[a.rank - 1 + k] = Math.round(a.point - step * k);
-      }
+      for (let k = 0; k < span; k++) scores[a.rank - 1 + k] = Math.round(a.point - step * k);
     }
-
     if (scores[0] === '') scores[0] = maxPoint;
-    for (let i = 1; i < scores.length; i++) {
-      if (scores[i] === '') scores[i] = Math.max(minPoint, scores[i - 1] - 1);
-    }
-
+    for (let i = 1; i < scores.length; i++) if (scores[i] === '') scores[i] = Math.max(minPoint, scores[i - 1] - 1);
     return scores;
   }
 
   function scoreTier(score) {
     if (!Number.isFinite(score)) return 0;
-    if (score >= 90) return 5;
-    if (score >= 85) return 4;
-    if (score >= 80) return 3;
-    if (score >= 75) return 2;
-    if (score >= 70) return 1;
-    if (score >= 65) return 'white'; 
+    if (score >= 90) return 5; if (score >= 85) return 4; if (score >= 80) return 3; if (score >= 75) return 2; if (score >= 70) return 1; if (score >= 65) return 'white'; 
     return 0;
   }
 
-  function scoreWrapClass(score) {
-    return `score-badge tier-${scoreTier(score)}`;
-  }
+  function scoreWrapClass(score) { return `score-badge tier-${scoreTier(score)}`; }
 
   function updatePanelRatio() {
-    const songCount = state.songs.length;
-    const songFlex = Math.max(0.35, Math.min(1.25, songCount / 8 || 0.35));
-    const rankFlex = Math.max(1.6, 3 - songFlex);
-
+    const songFlex = Math.max(0.35, Math.min(1.25, state.songs.length / 8 || 0.35));
     songPanelEl.style.flex = String(songFlex);
-    rankPanelEl.style.flex = String(rankFlex);
+    rankPanelEl.style.flex = String(Math.max(1.6, 3 - songFlex));
   }
 
-  // --- ダブルタップとメモ機能 ---
   let lastTap = { time: 0, id: null };
   function checkDoubleTap(songId) {
     const now = Date.now();
-    if (lastTap.id === songId && now - lastTap.time < 300) {
-      lastTap = { time: 0, id: null };
-      return true;
-    }
-    lastTap = { time: now, id: songId };
-    return false;
+    if (lastTap.id === songId && now - lastTap.time < 300) { lastTap = { time: 0, id: null }; return true; }
+    lastTap = { time: now, id: songId }; return false;
   }
 
   let activeMemoResolve = null;
 
   function promptMemo(songId) {
-    const song = state.allSongs.find(s => s.id === songId);
-    if (!song) return;
+    // IDで検索（参照が切れている場合でも全リスト更新するため）
+    const findSong = (list) => list.find(s => s.id === songId);
+    const targetInAll = findSong(state.allSongs);
+    if (!targetInAll) return;
 
-    memoPromptDescEl.textContent = `「${song.text}」のメモを入力してください:`;
-    memoPromptInputEl.value = song.memo || '';
-    
+    memoPromptDescEl.textContent = `「${targetInAll.text}」のメモを入力してください:`;
+    memoPromptInputEl.value = targetInAll.memo || '';
     memoPromptModalEl.classList.add('open');
     memoPromptModalEl.setAttribute('aria-hidden', 'false');
     
     setTimeout(() => {
       memoPromptInputEl.focus();
-      try {
-        // カーソルを末尾に移動
-        memoPromptInputEl.setSelectionRange(memoPromptInputEl.value.length, memoPromptInputEl.value.length);
-      } catch (e) {}
+      try { memoPromptInputEl.setSelectionRange(memoPromptInputEl.value.length, memoPromptInputEl.value.length); } catch (e) {}
     }, 50);
 
     activeMemoResolve = (val) => {
       if (val !== null) {
-        song.memo = val;
+        // 保存・読込でオブジェクト参照が分かれている可能性があるため、全リストの同一ID曲を更新
+        [state.allSongs, state.songs, state.rank].forEach(list => {
+          const s = list.find(item => item.id === songId);
+          if (s) s.memo = val;
+        });
         render();
       }
     };
   }
 
   function closeMemoPrompt(isOk) {
-    memoPromptInputEl.blur(); // ズーム解除・キーボードを閉じる
+    memoPromptInputEl.blur(); 
     memoPromptModalEl.classList.remove('open');
     memoPromptModalEl.setAttribute('aria-hidden', 'true');
-    
-    if (activeMemoResolve) {
-      activeMemoResolve(isOk ? memoPromptInputEl.value : null);
-      activeMemoResolve = null;
-    }
+    if (activeMemoResolve) { activeMemoResolve(isOk ? memoPromptInputEl.value : null); activeMemoResolve = null; }
   }
 
   memoPromptCancelBtn.addEventListener('click', () => closeMemoPrompt(false));
   memoPromptOkBtn.addEventListener('click', () => closeMemoPrompt(true));
-  memoPromptModalEl.addEventListener('click', (e) => {
-    if (e.target === memoPromptModalEl) closeMemoPrompt(false);
-  });
+  memoPromptModalEl.addEventListener('click', (e) => { if (e.target === memoPromptModalEl) closeMemoPrompt(false); });
 
-  // --- コピー機能 ---
   function copyRankOrder() {
-    const scores = calcScores();
-    let text = '';
-    state.rank.forEach((song, i) => {
-      const score = scores[i];
-      const fav = state.favorites.has(song.id) ? '〇' : '';
-      text += `${song.text}　${score}${fav}\n`;
-    });
-
+    const scores = calcScores(); let text = '';
+    state.rank.forEach((song, i) => { text += `${song.text}　${scores[i]}${state.favorites.has(song.id) ? '〇' : ''}\n`; });
     if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      showToast('順位順でコピーしました');
-    }).catch(() => {
-      alert('コピーに失敗しました。');
-    });
+    navigator.clipboard.writeText(text).then(() => showToast('順位順でコピーしました')).catch(() => alert('コピー失敗'));
   }
 
   function copyNumberOrder() {
-    const scores = calcScores();
-    const scoreById = new Map();
+    const scores = calcScores(); const scoreById = new Map();
     state.rank.forEach((song, i) => scoreById.set(song.id, scores[i]));
-
     let text = '';
-    state.allSongs.forEach((song) => {
-      const score = scoreById.has(song.id) ? scoreById.get(song.id) : '-';
-      const fav = state.favorites.has(song.id) ? '〇' : '';
-      text += `${song.text}　${score}${fav}\n`;
-    });
-
+    state.allSongs.forEach((song) => { text += `${song.text}　${scoreById.get(song.id) ?? '-'}${state.favorites.has(song.id) ? '〇' : ''}\n`; });
     if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      showToast('No.順でコピーしました');
-    }).catch(() => {
-      alert('コピーに失敗しました。');
-    });
+    navigator.clipboard.writeText(text).then(() => showToast('No.順でコピーしました')).catch(() => alert('コピー失敗'));
   }
 
   function render() {
     updatePanelRatio();
-
-    songListEl.innerHTML = '';
-    rankListEl.innerHTML = '';
+    songListEl.innerHTML = ''; rankListEl.innerHTML = '';
 
     state.songs.forEach((song) => {
-      const item = document.createElement('div');
-      item.className = 'item song';
-      item.innerHTML = `
-        <div class="song-title">
-          ${escapeHtml(song.text)}
-          ${song.memo ? `<div class="song-memo">${escapeHtml(song.memo)}</div>` : ''}
-        </div>
-        <div class="score"></div>
-      `;
+      const item = document.createElement('div'); item.className = 'item song';
+      item.innerHTML = `<div class="song-title">${escapeHtml(song.text)}${song.memo ? `<div class="song-memo">${escapeHtml(song.memo)}</div>` : ''}</div><div class="score"></div>`;
       item.addEventListener('pointerdown', (e) => onSongPointerDown(e, item, song.id), { passive: false });
       songListEl.appendChild(item);
     });
 
-    const scores = calcScores();
-    const lines = getLines();
-    const lineMap = new Map();
+    const scores = calcScores(); const lines = getLines(); const lineMap = new Map();
     lines.forEach(l => lineMap.set(l.rank, l.point));
 
     state.rank.forEach((song, index) => {
       if (lineMap.has(index + 1)) {
-        const divider = document.createElement('div');
-        divider.className = 'rank-line-divider';
+        const divider = document.createElement('div'); divider.className = 'rank-line-divider';
         divider.textContent = `点数ライン：${lineMap.get(index + 1)}点`;
         rankListEl.appendChild(divider);
       }
-
       const score = scores[index];
-      const isFav = state.favorites.has(song.id);
-      const item = document.createElement('div');
-      item.className = 'item rank';
-      item.dataset.id = String(song.id);
+      // 順位欄用：メモの1行目を取得
+      const memoLine = song.memo ? song.memo.split('\n')[0].trim() : '';
 
+      const item = document.createElement('div'); item.className = 'item rank';
+      item.dataset.id = String(song.id);
       item.innerHTML = `
-        <div class="rank-drag-zone" aria-label="ドラッグ">
-          <div class="drag-handle">≡</div>
-        </div>
+        <div class="rank-drag-zone"><div class="drag-handle">≡</div></div>
         <div class="rank-content">
           <div class="rank-num">${index + 1}</div>
           <div class="rank-title">
             ${escapeHtml(song.text)}
-            ${song.memo ? `<div class="song-memo">${escapeHtml(song.memo)}</div>` : ''}
+            ${memoLine ? `<div class="song-memo">${escapeHtml(memoLine)}</div>` : ''}
           </div>
-          <div class="${scoreWrapClass(score)}" style="cursor: pointer;" title="タップでお気に入り登録/解除">
-            ${score ?? ''}
-            ${isFav ? '<div class="fav-star">★</div>' : ''}
+          <div class="${scoreWrapClass(score)}" style="cursor: pointer;">
+            ${score ?? ''}${state.favorites.has(song.id) ? '<div class="fav-star">★</div>' : ''}
           </div>
         </div>
       `;
-
-      // お気に入り切り替え
       const badge = item.querySelector('.score-badge');
       badge.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (state.favorites.has(song.id)) {
-          state.favorites.delete(song.id);
-        } else {
-          state.favorites.add(song.id);
-        }
+        if (state.favorites.has(song.id)) state.favorites.delete(song.id); else state.favorites.add(song.id);
         render(); 
       });
-
-      // 順位側アイテムでのダブルタップ判定
       const rankContent = item.querySelector('.rank-content');
       rankContent.addEventListener('pointerup', (e) => {
-        if (e.target.closest('.score-badge')) return; // バッジタップ時は除外
-        if (checkDoubleTap(song.id)) {
-          promptMemo(song.id);
-        }
+        if (e.target.closest('.score-badge')) return; 
+        if (checkDoubleTap(song.id)) promptMemo(song.id);
       });
-
-      const zone = item.querySelector('.rank-drag-zone');
-      zone.addEventListener('pointerdown', (e) => startRankDrag(e, item, song.id), { passive: false });
-
+      item.querySelector('.rank-drag-zone').addEventListener('pointerdown', (e) => startRankDrag(e, item, song.id), { passive: false });
       rankListEl.appendChild(item);
     });
 
     updateStats(scores);
-    if (numberOrderModalEl.classList.contains('open')) {
-      renderNumberOrderModal();
-    }
+    if (numberOrderModalEl.classList.contains('open')) renderNumberOrderModal();
+    autoSave();
   }
 
   function updateStats(scores) {
-    if (!scores.length) {
-      statsBarEl.textContent = '曲数: 0 ｜ 平均点: - ｜ 標準偏差: -';
-      return;
-    }
-
-    const count = scores.length;
-    const avg = scores.reduce((a, b) => a + b, 0) / count;
-    const variance = scores.reduce((a, b) => a + (b - avg) ** 2, 0) / count;
-    const sd = Math.sqrt(variance);
-
-    statsBarEl.textContent =
-      `曲数: ${count} ｜ 平均点: ${avg.toFixed(1)} ｜ 標準偏差: ${sd.toFixed(1)}`;
+    if (!scores.length) { statsBarEl.textContent = '曲数: 0 ｜ 平均点: - ｜ 標準偏差: -'; return; }
+    const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const sd = Math.sqrt(scores.reduce((a, b) => a + (b - avg) ** 2, 0) / scores.length);
+    statsBarEl.textContent = `曲数: ${scores.length} ｜ 平均点: ${avg.toFixed(1)} ｜ 標準偏差: ${sd.toFixed(1)}`;
   }
 
-  function openNumberOrderModal() {
-    renderNumberOrderModal();
-    numberOrderModalEl.classList.add('open');
-    numberOrderModalEl.setAttribute('aria-hidden', 'false');
-  }
-
-  function closeNumberOrderModal() {
-    numberOrderModalEl.classList.remove('open');
-    numberOrderModalEl.setAttribute('aria-hidden', 'true');
-  }
+  function openNumberOrderModal() { renderNumberOrderModal(); numberOrderModalEl.classList.add('open'); numberOrderModalEl.setAttribute('aria-hidden', 'false'); }
+  function closeNumberOrderModal() { numberOrderModalEl.classList.remove('open'); numberOrderModalEl.setAttribute('aria-hidden', 'true'); }
 
   function renderNumberOrderModal() {
-    const scores = calcScores();
-    const scoreById = new Map();
-    state.rank.forEach((song, index) => {
-      scoreById.set(song.id, scores[index]);
+    const scores = calcScores(); const scoreById = new Map();
+    state.rank.forEach((song, index) => scoreById.set(song.id, scores[index]));
+    let html = `<table class="order-table"><thead><tr><th style="width:3.4em;">No.</th><th>曲名</th><th style="width:4.5em;">点数</th></tr></thead><tbody>`;
+    state.allSongs.forEach((song, idx) => {
+      const score = scoreById.get(song.id); const memoLine = song.memo ? song.memo.split('\n')[0].trim() : '';
+      html += `<tr><td class="order-rank">${idx+1}</td><td>${escapeHtml(song.text)}${memoLine ? `<div class="song-memo">${escapeHtml(memoLine)}</div>` : ''}</td><td class="scorecell"><span class="order-score-wrap ${scoreWrapClass(score)}" style="cursor: pointer;" data-id="${song.id}">${Number.isFinite(score) ? score : '-'}${state.favorites.has(song.id) ? '<div class="fav-star">★</div>' : ''}</span></td></tr>`;
     });
-
-    const entries = state.allSongs.map((song, idx) => ({
-      id: song.id,
-      no: idx + 1,
-      title: song.text,
-      memo: song.memo,
-      score: scoreById.has(song.id) ? scoreById.get(song.id) : null
-    }));
-
-    if (!entries.length) {
-      numberOrderBodyEl.innerHTML = '<div style="padding:8px 2px;color:var(--muted);font-size:14px;">曲がありません。</div>';
-      return;
-    }
-
-    let html = `
-      <table class="order-table">
-        <thead>
-          <tr>
-            <th style="width:3.4em;">No.</th>
-            <th>曲名</th>
-            <th style="width:4.5em;">点数</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
-
-    for (const row of entries) {
-      const isFav = state.favorites.has(row.id);
-      html += `
-        <tr>
-          <td class="order-rank">${row.no}</td>
-          <td>
-            ${escapeHtml(row.title)}
-            ${row.memo ? `<div class="song-memo">${escapeHtml(row.memo)}</div>` : ''}
-          </td>
-          <td class="scorecell">
-            <span class="order-score-wrap ${scoreWrapClass(row.score)}" style="cursor: pointer;" data-id="${row.id}" title="タップでお気に入り登録/解除">
-              ${Number.isFinite(row.score) ? row.score : '-'}
-              ${isFav ? '<div class="fav-star">★</div>' : ''}
-            </span>
-          </td>
-        </tr>
-      `;
-    }
-
-    html += `</tbody></table>`;
-    numberOrderBodyEl.innerHTML = html;
+    numberOrderBodyEl.innerHTML = html + `</tbody></table>`;
   }
 
-  numberOrderModalEl.addEventListener('click', (e) => {
-    if (e.target === numberOrderModalEl) closeNumberOrderModal();
-  });
-
+  numberOrderModalEl.addEventListener('click', (e) => { if (e.target === numberOrderModalEl) closeNumberOrderModal(); });
   numberOrderBodyEl.addEventListener('click', (e) => {
     const wrap = e.target.closest('.order-score-wrap');
     if (wrap) {
       const id = parseInt(wrap.dataset.id, 10);
-      if (state.favorites.has(id)) {
-        state.favorites.delete(id);
-      } else {
-        state.favorites.add(id);
-      }
-      renderNumberOrderModal();
-      render();
+      if (state.favorites.has(id)) state.favorites.delete(id); else state.favorites.add(id);
+      renderNumberOrderModal(); render();
     }
   });
 
   function onSongPointerDown(e, itemEl, songId) {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (state.drag || state.songPress) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const press = {
-      itemEl,
-      songId,
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      dragStarted: false,
-      timer: null,
-      captured: false
-    };
-
+    if ((e.pointerType === 'mouse' && e.button !== 0) || state.drag || state.songPress) return;
+    e.preventDefault(); e.stopPropagation();
+    const press = { itemEl, songId, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, dragStarted: false, timer: null, captured: false };
     state.songPress = press;
-
-    try {
-      if (itemEl.setPointerCapture) {
-        itemEl.setPointerCapture(e.pointerId);
-        press.captured = true;
-      }
-    } catch (_) {}
-
-    press.timer = setTimeout(() => {
-      if (state.songPress !== press) return;
-      beginSongDrag(press);
-    }, 180);
-
+    try { if (itemEl.setPointerCapture) { itemEl.setPointerCapture(e.pointerId); press.captured = true; } } catch (_) {}
+    press.timer = setTimeout(() => { if (state.songPress === press) beginSongDrag(press); }, 180);
     document.addEventListener('pointerup', onSongPressUp, { passive: false });
     document.addEventListener('pointercancel', onSongPressUp, { passive: false });
   }
 
   function onSongPressUp(e) {
-    const press = state.songPress;
-    if (!press || e.pointerId !== press.pointerId) return;
-
+    const press = state.songPress; if (!press || e.pointerId !== press.pointerId) return;
     clearTimeout(press.timer);
-
-    if (!press.dragStarted) {
-      // ダブルタップでメモ機能呼び出し
-      if (checkDoubleTap(press.songId)) {
-        promptMemo(press.songId);
-      }
-      cleanupSongPressListeners(press);
-    }
+    if (!press.dragStarted) { if (checkDoubleTap(press.songId)) promptMemo(press.songId); cleanupSongPressListeners(press); }
   }
 
   function cleanupSongPressListeners(press) {
-    if (press && press.captured && press.itemEl && press.itemEl.releasePointerCapture) {
-      try {
-        if (press.itemEl.hasPointerCapture && press.itemEl.hasPointerCapture(press.pointerId)) {
-          press.itemEl.releasePointerCapture(press.pointerId);
-        }
-      } catch (_) {}
+    if (press && press.captured && press.itemEl?.releasePointerCapture) {
+      try { if (press.itemEl.hasPointerCapture?.(press.pointerId)) press.itemEl.releasePointerCapture(press.pointerId); } catch (_) {}
     }
-
-    document.removeEventListener('pointerup', onSongPressUp);
-    document.removeEventListener('pointercancel', onSongPressUp);
+    document.removeEventListener('pointerup', onSongPressUp); document.removeEventListener('pointercancel', onSongPressUp);
     state.songPress = null;
   }
 
   function beginSongDrag(press) {
     if (state.songPress !== press) return;
-
-    clearTimeout(press.timer);
-    press.dragStarted = true;
-
-    const itemEl = press.itemEl;
-    const rect = itemEl.getBoundingClientRect();
-
-    const placeholder = document.createElement('div');
-    placeholder.className = 'placeholder';
-    songListEl.insertBefore(placeholder, itemEl.nextSibling);
-
-    document.body.classList.add('dragging');
-    itemEl.classList.add('dragging');
-    itemEl.style.position = 'fixed';
-    itemEl.style.left = rect.left + 'px';
-    itemEl.style.top = rect.top + 'px';
-    itemEl.style.width = rect.width + 'px';
-    itemEl.style.margin = '0';
-    itemEl.style.zIndex = '9999';
-    document.body.appendChild(itemEl);
-
-    state.drag = {
-      type: 'song',
-      itemEl,
-      placeholder,
-      songId: press.songId,
-      offsetY: press.startY - rect.top,
-      left: rect.left,
-      pointerId: press.pointerId,
-      active: true
-    };
-
+    clearTimeout(press.timer); press.dragStarted = true;
+    const rect = press.itemEl.getBoundingClientRect();
+    const placeholder = document.createElement('div'); placeholder.className = 'placeholder';
+    songListEl.insertBefore(placeholder, press.itemEl.nextSibling);
+    document.body.classList.add('dragging'); press.itemEl.classList.add('dragging');
+    Object.assign(press.itemEl.style, { position: 'fixed', left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px', margin: '0', zIndex: '9999' });
+    document.body.appendChild(press.itemEl);
+    state.drag = { type: 'song', itemEl: press.itemEl, placeholder, songId: press.songId, offsetY: press.startY - rect.top, left: rect.left, pointerId: press.pointerId, active: true };
     moveDraggedItem(press.startY);
-
     document.addEventListener('pointermove', onDragMove, { passive: false });
     document.addEventListener('pointerup', onDragEnd, { passive: false });
     document.addEventListener('pointercancel', onDragEnd, { passive: false });
   }
 
   function startRankDrag(e, itemEl, songId) {
-    e.preventDefault();
-    e.stopPropagation();
-
+    e.preventDefault(); e.stopPropagation();
     const rect = itemEl.getBoundingClientRect();
-
-    const placeholder = document.createElement('div');
-    placeholder.className = 'placeholder';
+    const placeholder = document.createElement('div'); placeholder.className = 'placeholder';
     itemEl.after(placeholder);
-
-    document.body.classList.add('dragging');
-    itemEl.classList.add('dragging');
-    itemEl.style.position = 'fixed';
-    itemEl.style.left = rect.left + 'px';
-    itemEl.style.top = rect.top + 'px';
-    itemEl.style.width = rect.width + 'px';
-    itemEl.style.margin = '0';
-    itemEl.style.zIndex = '9999';
+    document.body.classList.add('dragging'); itemEl.classList.add('dragging');
+    Object.assign(itemEl.style, { position: 'fixed', left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px', margin: '0', zIndex: '9999' });
     document.body.appendChild(itemEl);
-
-    state.drag = {
-      type: 'rank',
-      itemEl,
-      placeholder,
-      songId,
-      offsetY: e.clientY - rect.top,
-      left: rect.left,
-      pointerId: e.pointerId,
-      active: true
-    };
-
+    state.drag = { type: 'rank', itemEl, placeholder, songId, offsetY: e.clientY - rect.top, left: rect.left, pointerId: e.pointerId, active: true };
     moveDraggedItem(e.clientY);
-
     document.addEventListener('pointermove', onDragMove, { passive: false });
     document.addEventListener('pointerup', onDragEnd, { passive: false });
     document.addEventListener('pointercancel', onDragEnd, { passive: false });
   }
 
-  function onDragMove(e) {
-    const drag = state.drag;
-    if (!drag || !drag.active || e.pointerId !== drag.pointerId) return;
-    e.preventDefault();
-    moveDraggedItem(e.clientY);
-  }
+  function onDragMove(e) { if (state.drag?.active && e.pointerId === state.drag.pointerId) { e.preventDefault(); moveDraggedItem(e.clientY); } }
 
   function moveDraggedItem(clientY) {
-    const drag = state.drag;
-    if (!drag || !drag.active) return;
-
+    const drag = state.drag; if (!drag) return;
     drag.itemEl.style.top = (clientY - drag.offsetY) + 'px';
-    drag.itemEl.style.left = drag.left + 'px';
-
-    if (drag.type === 'rank') {
-      placePlaceholderInRank(clientY, drag.placeholder);
-      autoScrollRank(clientY);
-      return;
-    }
-
-    const rankRect = rankListEl.getBoundingClientRect();
-    if (clientY >= rankRect.top && clientY <= rankRect.bottom) {
-      placePlaceholderInRank(clientY, drag.placeholder);
-      autoScrollRank(clientY);
-    }
+    if (drag.type === 'rank') { placePlaceholderInRank(clientY, drag.placeholder); autoScrollRank(clientY); return; }
+    const rankRect = rankPanelEl.getBoundingClientRect();
+    if (clientY >= rankRect.top && clientY <= rankRect.bottom) { placePlaceholderInRank(clientY, drag.placeholder); autoScrollRank(clientY); }
   }
 
   function placePlaceholderInRank(clientY, placeholder) {
     const items =[...rankListEl.querySelectorAll('.rank:not(.dragging)')];
-
-    if (!items.length) {
-      rankListEl.appendChild(placeholder);
-      return;
-    }
-
+    if (!items.length) { rankListEl.appendChild(placeholder); return; }
     for (const el of items) {
       const r = el.getBoundingClientRect();
-      if (clientY < r.top + r.height / 2) {
-        rankListEl.insertBefore(placeholder, el);
-        return;
-      }
+      if (clientY < r.top + r.height / 2) { rankListEl.insertBefore(placeholder, el); return; }
     }
-
     rankListEl.appendChild(placeholder);
   }
 
   function autoScrollRank(clientY) {
     const box = rankListEl.getBoundingClientRect();
-    if (clientY < box.top + 70) {
-      rankListEl.scrollTop -= 12;
-    } else if (clientY > box.bottom - 70) {
-      rankListEl.scrollTop += 12;
-    }
+    if (clientY < box.top + 70) rankListEl.scrollTop -= 12; else if (clientY > box.bottom - 70) rankListEl.scrollTop += 12;
   }
 
   function onDragEnd(e) {
-    const drag = state.drag;
-    if (!drag || !drag.active || e.pointerId !== drag.pointerId) return;
+    const drag = state.drag; if (!drag || e.pointerId !== drag.pointerId) return;
     e.preventDefault();
-
     if (drag.type === 'song') {
       if (drag.placeholder.parentElement === rankListEl) {
-        const targetIndex =[...rankListEl.children]
-          .filter(el => !el.classList.contains('rank-line-divider'))
-          .indexOf(drag.placeholder);
+        const targetIndex =[...rankListEl.children].filter(el => !el.classList.contains('rank-line-divider') && !el.classList.contains('dragging')).indexOf(drag.placeholder);
         const sourceIndex = state.songs.findIndex(x => x.id === drag.songId);
-
-        if (sourceIndex >= 0) {
-          const [moved] = state.songs.splice(sourceIndex, 1);
-          const idx = Math.max(0, Math.min(targetIndex, state.rank.length));
-          state.rank.splice(idx, 0, moved);
-        }
+        if (sourceIndex >= 0) { const [moved] = state.songs.splice(sourceIndex, 1); state.rank.splice(Math.max(0, targetIndex), 0, moved); }
       }
     } else {
-      const targetIndex =[...rankListEl.children]
-        .filter(el => !el.classList.contains('rank-line-divider'))
-        .indexOf(drag.placeholder);
+      const targetIndex =[...rankListEl.children].filter(el => !el.classList.contains('rank-line-divider') && !el.classList.contains('dragging')).indexOf(drag.placeholder);
       const sourceIndex = state.rank.findIndex(x => x.id === drag.songId);
-
-      if (sourceIndex >= 0) {
-        const [moved] = state.rank.splice(sourceIndex, 1);
-        const idx = Math.max(0, Math.min(targetIndex, state.rank.length));
-        state.rank.splice(idx, 0, moved);
-      }
+      if (sourceIndex >= 0) { const [moved] = state.rank.splice(sourceIndex, 1); state.rank.splice(Math.max(0, targetIndex), 0, moved); }
     }
-
-    cleanupSongPressListeners(state.songPress);
-    removeDragArtifacts(drag);
-
-    document.removeEventListener('pointermove', onDragMove);
-    document.removeEventListener('pointerup', onDragEnd);
-    document.removeEventListener('pointercancel', onDragEnd);
-
-    state.drag = null;
-    document.body.classList.remove('dragging');
-
-    render();
+    cleanupSongPressListeners(state.songPress); removeDragArtifacts(drag);
+    document.removeEventListener('pointermove', onDragMove); document.removeEventListener('pointerup', onDragEnd); document.removeEventListener('pointercancel', onDragEnd);
+    state.drag = null; document.body.classList.remove('dragging'); render();
   }
 
   function removeDragArtifacts(drag) {
-    if (drag.itemEl && drag.itemEl.isConnected) {
-      try {
-        if (drag.itemEl.releasePointerCapture && drag.itemEl.hasPointerCapture && drag.itemEl.hasPointerCapture(drag.pointerId)) {
-          drag.itemEl.releasePointerCapture(drag.pointerId);
-        }
-      } catch (_) {}
-      drag.itemEl.removeAttribute('style');
-      drag.itemEl.classList.remove('dragging');
-      drag.itemEl.remove();
+    if (drag.itemEl?.isConnected) {
+      try { if (drag.itemEl.hasPointerCapture?.(drag.pointerId)) drag.itemEl.releasePointerCapture(drag.pointerId); } catch (_) {}
+      drag.itemEl.removeAttribute('style'); drag.itemEl.classList.remove('dragging'); drag.itemEl.remove();
     }
-    if (drag.placeholder && drag.placeholder.isConnected) {
-      drag.placeholder.remove();
-    }
+    if (drag.placeholder?.isConnected) drag.placeholder.remove();
   }
 
-  function escapeHtml(str) {
-    return String(str)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
-  }
+  function escapeHtml(str) { return String(str).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;'); }
 
-  document.getElementById('maxPoint').addEventListener('input', render);
-  document.getElementById('minPoint').addEventListener('input', render);
-
-  addLine();
-  render();
-  statsBarEl.textContent = '曲数: 0 ｜ 平均点: - ｜ 標準偏差: -';
+  maxPointEl.addEventListener('input', render); minPointEl.addEventListener('input', render);
+  autoLoad();
 </script>
 </body>
 </html>
