@@ -1,5 +1,3 @@
---- START OF FILE Paste May 29, 2026 - 12:17PM ---
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -762,10 +760,10 @@
   }
 
   function applyImportData(data) {
-    state.allSongs = data.allSongs || [];
+    state.allSongs = data.allSongs ||[];
     state.songs = data.songs || [];
-    state.rank = data.rank || [];
-    state.favorites = new Set(data.favorites || []);
+    state.rank = data.rank ||[];
+    state.favorites = new Set(data.favorites ||[]);
     state.nextId = data.nextId || 1;
     maxPointEl.value = data.maxPoint || 85;
     minPointEl.value = data.minPoint || 65;
@@ -824,7 +822,7 @@
         <div class="save-entry">
           <div class="save-info">
             <div class="save-name">${escapeHtml(name)}</div>
-            <div class="save-date">${date} (${(saves[name].allSongs || []).length}曲)</div>
+            <div class="save-date">${date} (${(saves[name].allSongs ||[]).length}曲)</div>
           </div>
           <div class="save-btns">
             <button class="save-btn btn secondary" onclick="manualLoad('${escapeHtml(name)}')">ロード</button>
@@ -837,7 +835,7 @@
 
   function clearData() {
     if (confirm("全てのデータを消去しますか？")) {
-      state.allSongs = []; state.songs = []; state.rank = []; state.favorites.clear(); state.nextId = 1;
+      state.allSongs = []; state.songs = []; state.rank =[]; state.favorites.clear(); state.nextId = 1;
       document.getElementById('inputSongs').value = '';
       saveNameInput.value = '';
       lineListEl.innerHTML = '';
@@ -913,44 +911,27 @@
     const n = state.rank.length;
     if (!Number.isFinite(maxPoint) || !Number.isFinite(minPoint) || n === 0) return[];
     
-    // 重複時にユーザーラインを優先させるため、isDefaultプロパティで定義を分離
-    const userLines = getLines().filter(x => x.rank >= 1 && x.rank <= n);
-    const controls = [
-      { rank: 1, point: maxPoint, isDefault: true },
-      ...userLines.map(x => ({ ...x, isDefault: false })),
-      { rank: n, point: minPoint, isDefault: true }
-    ];
-
-    // 同順位の場合、デフォルト値を先に、ユーザー設定値を後に並ぶようソート
-    controls.sort((a, b) => {
-      if (a.rank !== b.rank) return a.rank - b.rank;
-      if (a.isDefault && !b.isDefault) return -1;
-      if (!a.isDefault && b.isDefault) return 1;
-      return 0;
-    });
-
-    const deduped =[];
-    for (const c of controls) {
-      if (!deduped.length || deduped[deduped.length - 1].rank !== c.rank) deduped.push(c);
-      else deduped[deduped.length - 1] = c; // 重複時はより優先度の高い（後にソートされた）ユーザー設定で上書き
+    // 順位・点数の基点を作成
+    const rawLines = getLines();
+    const controls = [{ rank: 1, point: maxPoint }, ...rawLines.filter(x => x.rank > 1 && x.rank < n), { rank: n, point: minPoint }].sort((a, b) => a.rank - b.rank);
+    
+    const scores = new Array(n).fill(0);
+    
+    // 各区間を補間
+    for (let i = 0; i < controls.length - 1; i++) {
+        const start = controls[i];
+        const end = controls[i+1];
+        const count = end.rank - start.rank;
+        for (let k = 0; k <= count; k++) {
+            const currentRank = start.rank + k;
+            if (currentRank > n) break;
+            const progress = count === 0 ? 0 : k / count;
+            const score = start.point - (start.point - end.point) * progress;
+            scores[currentRank - 1] = Math.round(score);
+        }
     }
-
-    const scores = new Array(n).fill('');
-
-    // 曲数が1件のみかつユーザーが1位のラインを設定していた場合の処理
-    if (deduped.length === 1 && !deduped[0].isDefault) {
-      scores[0] = Math.round(deduped[0].point);
-    } else if (deduped.length > 1) {
-      for (let i = 0; i < deduped.length - 1; i++) {
-        const a = deduped[i]; const b = deduped[i + 1]; const span = b.rank - a.rank + 1;
-        if (span <= 1) { scores[a.rank - 1] = Math.round(a.point); continue; }
-        const step = (a.point - b.point) / (span - 1);
-        for (let k = 0; k < span; k++) scores[a.rank - 1 + k] = Math.round(a.point - step * k);
-      }
-    }
-
-    if (scores[0] === '') scores[0] = maxPoint;
-    for (let i = 1; i < scores.length; i++) if (scores[i] === '') scores[i] = Math.max(minPoint, scores[i - 1] - 1);
+    // 範囲外のケア
+    for(let i=0; i<n; i++) if(!scores[i]) scores[i] = minPoint;
     return scores;
   }
 
@@ -978,7 +959,6 @@
   let activeMemoResolve = null;
 
   function promptMemo(songId) {
-    // IDで検索（参照が切れている場合でも全リスト更新するため）
     const findSong = (list) => list.find(s => s.id === songId);
     const targetInAll = findSong(state.allSongs);
     if (!targetInAll) return;
@@ -995,7 +975,6 @@
 
     activeMemoResolve = (val) => {
       if (val !== null) {
-        // 保存・読込でオブジェクト参照が分かれている可能性があるため、全リストの同一ID曲を更新
         [state.allSongs, state.songs, state.rank].forEach(list => {
           const s = list.find(item => item.id === songId);
           if (s) s.memo = val;
@@ -1047,13 +1026,8 @@
     lines.forEach(l => lineMap.set(l.rank, l.point));
 
     state.rank.forEach((song, index) => {
-      if (lineMap.has(index + 1)) {
-        const divider = document.createElement('div'); divider.className = 'rank-line-divider';
-        divider.textContent = `点数ライン：${lineMap.get(index + 1)}点`;
-        rankListEl.appendChild(divider);
-      }
+      const currentRank = index + 1;
       const score = scores[index];
-      // 順位欄用：メモの1行目を取得
       const memoLine = song.memo ? song.memo.split('\n')[0].trim() : '';
 
       const item = document.createElement('div'); item.className = 'item rank';
@@ -1061,7 +1035,7 @@
       item.innerHTML = `
         <div class="rank-drag-zone"><div class="drag-handle">≡</div></div>
         <div class="rank-content">
-          <div class="rank-num">${index + 1}</div>
+          <div class="rank-num">${currentRank}</div>
           <div class="rank-title">
             ${escapeHtml(song.text)}
             ${memoLine ? `<div class="song-memo">${escapeHtml(memoLine)}</div>` : ''}
@@ -1084,6 +1058,13 @@
       });
       item.querySelector('.rank-drag-zone').addEventListener('pointerdown', (e) => startRankDrag(e, item, song.id), { passive: false });
       rankListEl.appendChild(item);
+
+      // --- 修正箇所: カードを追加した後に、ラインがあればその下に表示 ---
+      if (lineMap.has(currentRank)) {
+        const divider = document.createElement('div'); divider.className = 'rank-line-divider';
+        divider.textContent = `点数ライン：${lineMap.get(currentRank)}点`;
+        rankListEl.appendChild(divider);
+      }
     });
 
     updateStats(scores);
